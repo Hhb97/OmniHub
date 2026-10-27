@@ -19,9 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardController {
 
     private final DashboardService service;
+    private final com.omnihub.iot.integration.mqtt.IngestStats ingestStats;
 
-    public DashboardController(DashboardService service) {
+    public DashboardController(DashboardService service, com.omnihub.iot.integration.mqtt.IngestStats ingestStats) {
         this.service = service;
+        this.ingestStats = ingestStats;
+    }
+
+    /** Platform-wide uplink throughput (TPS), queue delay and last 60 seconds; not tenant-filtered. */
+    @GetMapping("/ingest-stats")
+    public ApiResponse<com.omnihub.iot.integration.mqtt.IngestStats.Snapshot> ingestStats() {
+        return ApiResponse.ok(ingestStats.snapshot());
     }
 
     @GetMapping("/overview")

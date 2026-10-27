@@ -1,9 +1,11 @@
 package com.omnihub.iot.telemetry;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.omnihub.iot.common.BatchQueue;
 import com.omnihub.iot.common.BizException;
 import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.common.PageResult;
+import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.Device;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.device.DeviceService;
@@ -12,6 +14,8 @@ import com.omnihub.iot.thingmodel.ThingModelDefs;
 import com.omnihub.iot.thingmodel.ThingModelDefs.Content;
 import com.omnihub.iot.thingmodel.ThingModelService;
 import com.omnihub.iot.thingmodel.ValueValidator;
+import jakarta.annotation.PreDestroy;
+import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +29,7 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -73,10 +78,18 @@ public class TelemetryService {
     private final ConfigService config;
     private final ApplicationEventPublisher events;
     private final HistoryStore history;
+    /** latest values (PostgreSQL) and history (PostgreSQL or InfluxDB) have their own queue and thread, so a slow
+     *  history store never delays the latest values and vice versa */
+    private final BatchQueue<HistoryStore.Sample> latestWriter;
+    private final BatchQueue<HistoryStore.Sample> historyWriter;
 
     public TelemetryService(JdbcTemplate jdbc, ThingModelService thingModels, DeviceService deviceService,
-            ConfigService config, ApplicationEventPublisher events, HistoryStore history) {
+            ConfigService config, ApplicationEventPublisher events, HistoryStore history, IotProperties props) {
         this.history = history;
+        IotProperties.Batch b = props.getIngest().getBatch();
+        this.latestWriter = new BatchQueue<>("latest", b.getQueueCapacity(), b.getMaxBatch(), 100, this::flushLatest);
+        this.historyWriter = new BatchQueue<>("history", b.getQueueCapacity(), b.getHistoryMaxBatch(), 100,
+                this::flushHistory);
         this.jdbc = jdbc;
         this.thingModels = thingModels;
         this.deviceService = deviceService;
@@ -110,20 +123,82 @@ public class TelemetryService {
         return new IngestResult(accepted, rejected);
     }
 
+    /** Queues the values; the background writer stores them in batches (latest values + history). */
     private void persist(Long deviceId, Map<String, JsonNode> values, Instant ts) {
-        Timestamp t = Timestamp.from(ts);
-        List<Object[]> latest = new ArrayList<>();
-        values.forEach((k, v) -> latest.add(new Object[] { deviceId, k, Jsons.toJson(v), t }));
-        // never let a late (out-of-order) report overwrite a newer latest value
-        jdbc.batchUpdate("""
-                INSERT INTO iot_device_latest (device_id, identifier, value, reported_at) VALUES (?, ?, ?::jsonb, ?)
-                ON CONFLICT (device_id, identifier) DO UPDATE SET value = EXCLUDED.value, reported_at = EXCLUDED.reported_at
-                WHERE iot_device_latest.reported_at <= EXCLUDED.reported_at""", latest);
+        for (Map.Entry<String, JsonNode> e : values.entrySet()) {
+            HistoryStore.Sample sample = new HistoryStore.Sample(deviceId, e.getKey(), e.getValue(), ts);
+            latestWriter.offer(sample);
+            historyWriter.offer(sample);
+        }
+    }
+
+    public long droppedWrites() {
+        return latestWriter.dropped() + historyWriter.dropped();
+    }
+
+    @PreDestroy
+    void close() {
+        latestWriter.close();
+        historyWriter.close();
+    }
+
+    private static final int CHUNK = 5000;
+
+    private void flushLatest(List<HistoryStore.Sample> batch) {
+        upsertLatest(batch); // a failure is logged by the queue; the batch is lost, history is unaffected
+    }
+
+    private void flushHistory(List<HistoryStore.Sample> batch) {
         try {
-            history.write(deviceId, values, ts);
-        } catch (Exception e) {
-            // the latest value is already stored; losing one history sample must not drop the whole message
-            log.error("Writing property history failed for device {}: {}", deviceId, e.getMessage());
+            history.writeBatch(batch);
+        } catch (RuntimeException first) {
+            // one retry for transient errors (connection reset, brief timeout); then the batch is given up
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw first;
+            }
+            history.writeBatch(batch);
+        }
+    }
+
+    /** Keeps only the newest sample per (device, property), then one INSERT ... ON CONFLICT per chunk. */
+    private void upsertLatest(List<HistoryStore.Sample> batch) {
+        Map<String, HistoryStore.Sample> newest = new LinkedHashMap<>();
+        for (HistoryStore.Sample s : batch) {
+            newest.merge(s.deviceId() + ":" + s.identifier(), s, (a, b) -> b.ts().isBefore(a.ts()) ? a : b);
+        }
+        List<HistoryStore.Sample> list = new ArrayList<>(newest.values());
+        for (int from = 0; from < list.size(); from += CHUNK) {
+            List<HistoryStore.Sample> part = list.subList(from, Math.min(list.size(), from + CHUNK));
+            int n = part.size();
+            Long[] dev = new Long[n];
+            String[] ident = new String[n];
+            String[] json = new String[n];
+            Timestamp[] ts = new Timestamp[n];
+            for (int i = 0; i < n; i++) {
+                HistoryStore.Sample x = part.get(i);
+                dev[i] = x.deviceId();
+                ident[i] = x.identifier();
+                json[i] = Jsons.toJson(x.value());
+                ts[i] = Timestamp.from(x.ts());
+            }
+            // a late (out-of-order) report never overwrites a newer latest value
+            jdbc.execute((ConnectionCallback<Void>) con -> {
+                try (PreparedStatement ps = con.prepareStatement("""
+                        INSERT INTO iot_device_latest (device_id, identifier, value, reported_at)
+                        SELECT d, i, v::jsonb, t FROM unnest(?::bigint[], ?::varchar[], ?::text[], ?::timestamptz[]) AS x(d, i, v, t)
+                        ON CONFLICT (device_id, identifier) DO UPDATE SET value = EXCLUDED.value, reported_at = EXCLUDED.reported_at
+                        WHERE iot_device_latest.reported_at <= EXCLUDED.reported_at""")) {
+                    ps.setArray(1, con.createArrayOf("bigint", dev));
+                    ps.setArray(2, con.createArrayOf("varchar", ident));
+                    ps.setArray(3, con.createArrayOf("text", json));
+                    ps.setArray(4, con.createArrayOf("timestamptz", ts));
+                    ps.executeUpdate();
+                }
+                return null;
+            });
         }
     }
 

@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 840" width="1300" height="840" font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+  <rect width="1300" height="840" fill="#ffffff"/>
+
+  <text x="40" y="44" font-size="24" font-weight="700" fill="#0f172a">OmniHub 通用 IoT 平台架构</text>
+  <text x="40" y="68" font-size="13" fill="#64748b">前端 · 后端（Spring Boot）· EMQX · PostgreSQL · InfluxDB · Kafka（可选）</text>
+
+  <!-- ============ left column: clients ============ -->
+  <rect x="40" y="190" width="170" height="76" rx="8" fill="#e8f1ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="125" y="222" font-size="15" font-weight="600" text-anchor="middle" fill="#1e3a8a">浏览器</text>
+  <text x="125" y="243" font-size="12" text-anchor="middle" fill="#334155">Vue3 · Element Plus · ECharts</text>
+
+  <rect x="270" y="190" width="170" height="76" rx="8" fill="#e8f1ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="355" y="222" font-size="15" font-weight="600" text-anchor="middle" fill="#1e3a8a">Nginx / Vite 代理</text>
+  <text x="355" y="243" font-size="12" text-anchor="middle" fill="#334155">/api · /ws 转发</text>
+
+  <line x1="210" y1="228" x2="270" y2="228" stroke="#475569" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="240" y="219" font-size="11" text-anchor="middle" fill="#475569">HTTP/WS</text>
+  <line x1="440" y1="228" x2="540" y2="205" stroke="#475569" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+
+  <rect x="40" y="650" width="170" height="86" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+  <text x="125" y="682" font-size="15" font-weight="600" text-anchor="middle" fill="#0f172a">设备</text>
+  <text x="125" y="703" font-size="12" text-anchor="middle" fill="#334155">真实设备 · Node 模拟器</text>
+  <text x="125" y="721" font-size="12" text-anchor="middle" fill="#334155">Java 压测程序</text>
+
+  <rect x="270" y="650" width="170" height="86" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="355" y="682" font-size="15" font-weight="600" text-anchor="middle" fill="#9a3412">EMQX Broker</text>
+  <text x="355" y="703" font-size="12" text-anchor="middle" fill="#334155">MQTT :1883</text>
+  <text x="355" y="721" font-size="12" text-anchor="middle" fill="#334155">认证 / ACL 交给平台</text>
+
+  <line x1="210" y1="693" x2="270" y2="693" stroke="#475569" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="240" y="684" font-size="11" text-anchor="middle" fill="#475569">MQTT</text>
+
+  <!-- ============ backend container ============ -->
+  <rect x="520" y="150" width="540" height="470" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="540" y="174" font-size="15" font-weight="700" fill="#166534">后端 Spring Boot（Java）</text>
+
+  <rect x="540" y="186" width="235" height="46" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="657" y="206" font-size="13" font-weight="600" text-anchor="middle" fill="#0f172a">REST /api</text>
+  <text x="657" y="223" font-size="11" text-anchor="middle" fill="#475569">JWT · @PreAuthorize · 操作审计</text>
+
+  <rect x="790" y="186" width="250" height="46" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="915" y="206" font-size="13" font-weight="600" text-anchor="middle" fill="#0f172a">WebSocket /ws</text>
+  <text x="915" y="223" font-size="11" text-anchor="middle" fill="#475569">按设备/总览订阅 · 实时推送</text>
+
+  <rect x="540" y="246" width="500" height="44" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="790" y="266" font-size="13" font-weight="600" text-anchor="middle" fill="#0f172a">业务模块</text>
+  <text x="790" y="282" font-size="11" text-anchor="middle" fill="#475569">产品 · 物模型(版本) · 设备/凭证 · 仪表盘 · 用户/角色/权限 · 日志/配置</text>
+
+  <text x="540" y="318" font-size="12" font-weight="600" fill="#166534">上行消息处理（iot.ingest.mode）</text>
+
+  <rect x="540" y="328" width="150" height="82" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="615" y="352" font-size="13" font-weight="600" text-anchor="middle" fill="#0f172a">MQTT 网关</text>
+  <text x="615" y="370" font-size="11" text-anchor="middle" fill="#475569">Paho 客户端</text>
+  <text x="615" y="386" font-size="11" text-anchor="middle" fill="#475569">订阅上行 / 发布下行</text>
+
+  <rect x="720" y="322" width="300" height="34" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="870" y="343" font-size="12" text-anchor="middle" fill="#0f172a">direct：内存队列 ×8（按设备哈希，保序）</text>
+
+  <rect x="720" y="372" width="110" height="38" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="775" y="388" font-size="11" text-anchor="middle" fill="#0f172a">kafka：</text>
+  <text x="775" y="402" font-size="11" text-anchor="middle" fill="#0f172a">转发(key=设备)</text>
+  <rect x="846" y="372" width="76" height="38" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-dasharray="5 3" stroke-width="1.5"/>
+  <text x="884" y="388" font-size="12" font-weight="600" text-anchor="middle" fill="#9a3412">Kafka</text>
+  <text x="884" y="402" font-size="10" text-anchor="middle" fill="#475569">外部·可选</text>
+  <rect x="938" y="372" width="82" height="38" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="979" y="388" font-size="11" text-anchor="middle" fill="#0f172a">消费者</text>
+  <text x="979" y="402" font-size="11" text-anchor="middle" fill="#0f172a">(并发=分区)</text>
+
+  <line x1="690" y1="350" x2="720" y2="339" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="690" y1="388" x2="720" y2="391" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="830" y1="391" x2="846" y2="391" stroke="#ea580c" stroke-width="1.4" marker-end="url(#ao)"/>
+  <line x1="922" y1="391" x2="938" y2="391" stroke="#ea580c" stroke-width="1.4" marker-end="url(#ao)"/>
+  <path d="M1020,339 L1032,339 L1032,462 L1020,462" fill="none" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="979" y1="410" x2="979" y2="440" stroke="#475569" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <rect x="540" y="440" width="480" height="44" rx="6" fill="#ffffff" stroke="#16a34a"/>
+  <text x="780" y="460" font-size="13" font-weight="600" text-anchor="middle" fill="#0f172a">UplinkProcessor</text>
+  <text x="780" y="476" font-size="11" text-anchor="middle" fill="#475569">Topic 解析 · 设备校验 · 16KB 限制 · 去重 · 物模型校验 · 通信记录</text>
+
+  <g font-size="12" text-anchor="middle" fill="#0f172a">
+    <rect x="540" y="512" width="112" height="52" rx="6" fill="#ffffff" stroke="#16a34a"/>
+    <text x="596" y="534" font-weight="600">Telemetry</text><text x="596" y="551" font-size="10" fill="#475569">属性·事件·历史</text>
+    <rect x="664" y="512" width="112" height="52" rx="6" fill="#ffffff" stroke="#16a34a"/>
+    <text x="720" y="534" font-weight="600">Command</text><text x="720" y="551" font-size="10" fill="#475569">状态机·超时</text>
+    <rect x="788" y="512" width="112" height="52" rx="6" fill="#ffffff" stroke="#16a34a"/>
+    <text x="844" y="534" font-weight="600">AlarmEngine</text><text x="844" y="551" font-size="10" fill="#475569">去重·恢复·确认</text>
+    <rect x="912" y="512" width="112" height="52" rx="6" fill="#ffffff" stroke="#16a34a"/>
+    <text x="968" y="534" font-weight="600">DeviceRuntime</text><text x="968" y="551" font-size="10" fill="#475569">在线状态·认证</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.4" marker-end="url(#a)">
+    <line x1="596" y1="484" x2="596" y2="512"/>
+    <line x1="720" y1="484" x2="720" y2="512"/>
+    <line x1="844" y1="484" x2="844" y2="512"/>
+    <line x1="968" y1="484" x2="968" y2="512"/>
+  </g>
+  <text x="790" y="594" font-size="11" text-anchor="middle" fill="#166534">Spring 事件（属性上报 / 状态 / 指令变化 / 告警）→ WebSocket 推送与告警评估</text>
+
+  <!-- ============ right column: storage ============ -->
+  <rect x="1090" y="186" width="170" height="380" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+  <text x="1175" y="214" font-size="15" font-weight="600" text-anchor="middle" fill="#581c87">PostgreSQL</text>
+  <g font-size="12" text-anchor="middle" fill="#334155">
+    <text x="1175" y="242">用户 · 角色 · 权限</text>
+    <text x="1175" y="264">产品 · 物模型版本</text>
+    <text x="1175" y="286">设备（密钥哈希）</text>
+    <text x="1175" y="308">最新属性值</text>
+    <text x="1175" y="330">设备事件</text>
+    <text x="1175" y="352">通信记录</text>
+    <text x="1175" y="374">控制指令</text>
+    <text x="1175" y="396">告警规则 / 记录 / 处理</text>
+    <text x="1175" y="418">操作 / 登录日志 · 配置</text>
+    <text x="1175" y="452" font-size="11" fill="#7e22ce">Flyway 迁移 · 逻辑删除</text>
+    <text x="1175" y="470" font-size="11" fill="#7e22ce">属性历史默认也在此</text>
+    <text x="1175" y="488" font-size="11" fill="#7e22ce">（iot.history.store=postgres）</text>
+  </g>
+  <line x1="1040" y1="268" x2="1090" y2="268" stroke="#475569" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+  <line x1="1024" y1="540" x2="1090" y2="540" stroke="#475569" stroke-width="1.6" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="1065" y="258" font-size="10" text-anchor="middle" fill="#475569">JDBC</text>
+
+  <rect x="1090" y="650" width="170" height="86" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="1175" y="682" font-size="15" font-weight="600" text-anchor="middle" fill="#581c87">InfluxDB 1.x</text>
+  <text x="1175" y="703" font-size="12" text-anchor="middle" fill="#334155">属性历史（可切换）</text>
+  <text x="1175" y="721" font-size="11" text-anchor="middle" fill="#334155">HTTP 写入 / InfluxQL 查询</text>
+  <path d="M596,564 L596,693 L1090,693" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="850" y="684" font-size="11" text-anchor="middle" fill="#7e22ce">历史写入 / 趋势查询</text>
+
+  <!-- ============ EMQX <-> backend ============ -->
+  <path d="M440,668 L480,668 L480,369 L540,369" fill="none" stroke="#ea580c" stroke-width="1.8" marker-end="url(#ao)" marker-start="url(#ao)"/>
+  <text x="488" y="520" font-size="11" fill="#9a3412" transform="rotate(-90 488 520)" text-anchor="middle">订阅上行 iot/+/+/… · 发布下行 command/down</text>
+
+  <path d="M440,718 L968,718 L968,564" fill="none" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ao)"/>
+  <text x="700" y="736" font-size="11" text-anchor="middle" fill="#9a3412">EMQX HTTP 回调：/api/mqtt/auth（连接认证）· /api/mqtt/acl（主题授权），头 X-Broker-Token</text>
+
+  <!-- ============ legend ============ -->
+  <rect x="40" y="772" width="1220" height="46" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <line x1="60" y1="795" x2="100" y2="795" stroke="#475569" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="108" y="799" font-size="12" fill="#334155">主链路</text>
+  <line x1="180" y1="795" x2="220" y2="795" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#ao)"/>
+  <text x="228" y="799" font-size="12" fill="#334155">回调 / Kafka 路径（可选）</text>
+  <rect x="400" y="787" width="26" height="16" rx="3" fill="#f3e8ff" stroke="#9333ea" stroke-dasharray="4 3"/>
+  <text x="434" y="799" font-size="12" fill="#334155">可选组件（InfluxDB、Kafka）</text>
+  <text x="680" y="799" font-size="12" fill="#334155">下行指令：Command → MQTT 网关 → EMQX → 设备；设备应答经上行链路回到 Command 更新状态</text>
+</svg>

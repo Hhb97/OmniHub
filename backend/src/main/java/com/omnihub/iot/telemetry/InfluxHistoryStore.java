@@ -65,29 +65,42 @@ public class InfluxHistoryStore implements HistoryStore {
         }
     }
 
+    private static final int LINES_PER_REQUEST = 5000;
+
+    /** Line protocol, millisecond precision; one HTTP request per 5000 points instead of one per message. */
     @Override
-    public void write(Long deviceId, Map<String, JsonNode> values, Instant ts) {
+    public void writeBatch(List<Sample> samples) {
         StringBuilder body = new StringBuilder();
-        values.forEach((id, v) -> {
-            if (!IDENT.matcher(id).matches()) {
-                return;
+        int lines = 0;
+        for (Sample s : samples) {
+            if (!IDENT.matcher(s.identifier()).matches()) {
+                continue;
             }
-            Double num = ValueValidator.numeric(v);
-            body.append(M).append(",device_id=").append(deviceId).append(",identifier=").append(id).append(' ');
+            Double num = ValueValidator.numeric(s.value());
+            body.append(M).append(",device_id=").append(s.deviceId()).append(",identifier=").append(s.identifier())
+                    .append(' ');
             if (num != null) {
                 body.append("num=").append(num).append(',');
             }
-            body.append("json=\"").append(Jsons.toJson(v).replace("\\", "\\\\").replace("\"", "\\\"")).append("\" ")
-                    .append(ts.toEpochMilli()).append('\n');
-        });
-        if (body.isEmpty()) {
-            return;
+            body.append("json=\"").append(Jsons.toJson(s.value()).replace("\\", "\\\\").replace("\"", "\\\""))
+                    .append("\" ").append(s.ts().toEpochMilli()).append('\n');
+            if (++lines >= LINES_PER_REQUEST) {
+                post(body.toString());
+                body.setLength(0);
+                lines = 0;
+            }
         }
+        if (lines > 0) {
+            post(body.toString());
+        }
+    }
+
+    private void post(String body) {
         String url = cfg.getUrl() + "/write?db=" + enc(cfg.getDatabase()) + "&precision=ms"
                 + (cfg.getRetentionPolicy().isBlank() ? "" : "&rp=" + enc(cfg.getRetentionPolicy()));
         try {
             HttpResponse<String> r = http.send(auth(HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(10)).POST(HttpRequest.BodyPublishers.ofString(body.toString()))).build(),
+                    .timeout(Duration.ofSeconds(10)).POST(HttpRequest.BodyPublishers.ofString(body))).build(),
                     HttpResponse.BodyHandlers.ofString());
             if (r.statusCode() != 204) {
                 throw new IllegalStateException("InfluxDB write failed: HTTP " + r.statusCode() + " " + r.body());

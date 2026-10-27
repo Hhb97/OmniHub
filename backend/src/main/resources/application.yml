@@ -1,4 +1,8 @@
 server:
+  tomcat:
+    threads:
+      max: ${IOT_TOMCAT_THREADS:400}
+    accept-count: ${IOT_TOMCAT_ACCEPT_COUNT:500}
   port: ${SERVER_PORT:8080}
   shutdown: graceful
 
@@ -84,6 +88,7 @@ iot:
     client-id: ${IOT_MQTT_CLIENT_ID:iot-platform-${random.uuid}}
     # secret shared with the broker's HTTP auth plugin (EMQX) calling /api/mqtt/auth and /api/mqtt/acl
     http-auth-token: ${IOT_MQTT_HTTP_AUTH_TOKEN:}
+    subscribe-qos: ${IOT_MQTT_SUBSCRIBE_QOS:1}
     embedded-broker:
       enabled: false
       host: 0.0.0.0
@@ -91,6 +96,13 @@ iot:
   ingest:
     # direct (default): MQTT -> in-process lanes -> processing.  kafka: MQTT -> Kafka -> consumer -> processing.
     mode: ${IOT_INGEST_MODE:direct}
+    lanes: ${IOT_INGEST_LANES:0}
+    lane-queue: ${IOT_INGEST_LANE_QUEUE:20000}
+    batch:
+      queue-capacity: ${IOT_BATCH_QUEUE:200000}
+      max-batch: ${IOT_BATCH_MAX:2000}
+      history-max-batch: ${IOT_BATCH_HISTORY_MAX:5000}
+      log-ok-property: ${IOT_LOG_OK_PROPERTY:true}
     kafka:
       topic: ${IOT_KAFKA_TOPIC:iot-uplink}
       group-id: ${IOT_KAFKA_GROUP:iot-platform}
@@ -101,6 +113,9 @@ iot:
   device:
     offline-sweep-seconds: 15
     dedup-cache-size: 20000
+    auth-cache-warmup: ${IOT_AUTH_CACHE_WARMUP:true}
+    auth-cache-refresh-seconds: ${IOT_AUTH_CACHE_REFRESH_SECONDS:300}
+    auth-cache-max: ${IOT_AUTH_CACHE_MAX:200000}
   embedded-postgres:
     enabled: false
     port: 15432

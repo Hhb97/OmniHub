@@ -48,3 +48,7 @@ Controller 只做参数与权限；业务在 Service；DTO/VO 用 record。模�
 - 时序库：替换 `TelemetryService` 中历史写入/查询。
 - 历史保留：`retention.*` 配置 + 每日 03:17 清理任务。
 - 其他协议：新增 `integration.*` 子包，复用 `TelemetryService`/`CommandService`。
+
+## 架构图
+
+![架构图](architecture.svg)

@@ -31,12 +31,11 @@ import org.springframework.stereotype.Component;
 public class MqttGateway implements DownlinkPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(MqttGateway.class);
-    private static final int LANES = 8;
 
     private final IotProperties props;
     private final UplinkProcessor processor;
     private final org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder;
-    private final ThreadPoolExecutor[] lanes = new ThreadPoolExecutor[LANES];
+    private final ThreadPoolExecutor[] lanes;
     private final ScheduledExecutorService connector = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "mqtt-connector");
         t.setDaemon(true);
@@ -49,9 +48,12 @@ public class MqttGateway implements DownlinkPublisher {
         this.forwarder = forwarder;
         this.props = props;
         this.processor = processor;
-        for (int i = 0; i < LANES; i++) {
+        int laneCount = props.getIngest().getLanes() > 0 ? props.getIngest().getLanes()
+                : Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
+        this.lanes = new ThreadPoolExecutor[laneCount];
+        for (int i = 0; i < laneCount; i++) {
             int n = i;
-            lanes[i] = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(5000), r -> {
+            lanes[i] = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(props.getIngest().getLaneQueue()), r -> {
                 Thread t = new Thread(r, "mqtt-lane-" + n);
                 t.setDaemon(true);
                 return t;
@@ -108,7 +110,7 @@ public class MqttGateway implements DownlinkPublisher {
         try {
             String[] filters = Topics.PLATFORM_SUBSCRIPTIONS;
             int[] qos = new int[filters.length];
-            java.util.Arrays.fill(qos, 1);
+            java.util.Arrays.fill(qos, props.getMqtt().getSubscribeQos() == 0 ? 0 : 1);
             c.subscribe(filters, qos);
             log.info("MQTT gateway subscribed to {} topic filters", filters.length);
         } catch (MqttException e) {
@@ -156,7 +158,7 @@ public class MqttGateway implements DownlinkPublisher {
 
         @Override
         public void messageArrived(String topic, MqttMessage message) {
-            int lane = Math.floorMod(laneKey(topic), LANES);
+            int lane = Math.floorMod(laneKey(topic), lanes.length);
             long arrived = System.currentTimeMillis();
             KafkaUplinkForwarder f = forwarder.getIfAvailable();
             if (f != null) {

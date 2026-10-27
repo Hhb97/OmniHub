@@ -3,6 +3,7 @@ package com.omnihub.iot.telemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.thingmodel.ValueValidator;
+import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -24,15 +26,42 @@ public class PostgresHistoryStore implements HistoryStore {
         this.jdbc = jdbc;
     }
 
+    private static final int CHUNK = 5000;
+
+    /** One INSERT ... SELECT unnest(arrays) per chunk: thousands of rows per round trip. */
     @Override
-    public void write(Long deviceId, Map<String, JsonNode> values, Instant ts) {
-        Timestamp t = Timestamp.from(ts);
-        List<Object[]> rows = new ArrayList<>();
-        values.forEach((k, v) -> rows
-                .add(new Object[] { deviceId, k, ValueValidator.numeric(v), Jsons.toJson(v), t }));
-        jdbc.batchUpdate("""
-                INSERT INTO iot_device_property_history (device_id, identifier, num_value, value, ts)
-                VALUES (?, ?, ?, ?::jsonb, ?)""", rows);
+    public void writeBatch(List<Sample> samples) {
+        for (int from = 0; from < samples.size(); from += CHUNK) {
+            List<Sample> part = samples.subList(from, Math.min(samples.size(), from + CHUNK));
+            int n = part.size();
+            Long[] dev = new Long[n];
+            String[] ident = new String[n];
+            Double[] num = new Double[n];
+            String[] json = new String[n];
+            Timestamp[] ts = new Timestamp[n];
+            for (int i = 0; i < n; i++) {
+                Sample x = part.get(i);
+                dev[i] = x.deviceId();
+                ident[i] = x.identifier();
+                num[i] = ValueValidator.numeric(x.value());
+                json[i] = Jsons.toJson(x.value());
+                ts[i] = Timestamp.from(x.ts());
+            }
+            jdbc.execute((ConnectionCallback<Void>) con -> {
+                try (PreparedStatement ps = con.prepareStatement("""
+                        INSERT INTO iot_device_property_history (device_id, identifier, num_value, value, ts)
+                        SELECT d, i, n, v::jsonb, t
+                        FROM unnest(?::bigint[], ?::varchar[], ?::float8[], ?::text[], ?::timestamptz[]) AS x(d, i, n, v, t)""")) {
+                    ps.setArray(1, con.createArrayOf("bigint", dev));
+                    ps.setArray(2, con.createArrayOf("varchar", ident));
+                    ps.setArray(3, con.createArrayOf("float8", num));
+                    ps.setArray(4, con.createArrayOf("text", json));
+                    ps.setArray(5, con.createArrayOf("timestamptz", ts));
+                    ps.executeUpdate();
+                }
+                return null;
+            });
+        }
     }
 
     @Override

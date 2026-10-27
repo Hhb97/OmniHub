@@ -38,6 +38,8 @@ public class IotProperties {
         private String platformPassword = "";
         private String clientId = "iot-platform";
         private String httpAuthToken = "";
+        /** QoS of the platform's uplink subscription: 1 = at least once, 0 = fastest (messages may be lost) */
+        private int subscribeQos = 1;
         private EmbeddedBroker embeddedBroker = new EmbeddedBroker();
     }
 
@@ -52,6 +54,12 @@ public class IotProperties {
     public static class Device {
         private int offlineSweepSeconds = 15;
         private int dedupCacheSize = 20000;
+        /** keep all devices in memory for MQTT authentication (no DB access on connect) */
+        private boolean authCacheWarmup = true;
+        /** full reload interval of that cache; also how fast changes made by other instances are noticed */
+        private int authCacheRefreshSeconds = 300;
+        /** above this number of devices the warm-up is skipped and devices are cached lazily */
+        private int authCacheMax = 200000;
     }
 
     @Data
@@ -59,6 +67,23 @@ public class IotProperties {
         /** direct: MQTT message is processed in-process. kafka: gateway forwards it to Kafka, a consumer processes it. */
         private String mode = "direct";
         private Kafka kafka = new Kafka();
+        /** single-threaded MQTT processing lanes (per-device ordering); 0 = max(8, 2 x CPU cores) */
+        private int lanes = 0;
+        private int laneQueue = 20000;
+        private Batch batch = new Batch();
+    }
+
+    /** Background batch writer settings (message log, latest values, history, device last-communication time). */
+    @Data
+    public static class Batch {
+        /** items buffered per writer; when full new items are dropped and counted */
+        private int queueCapacity = 200000;
+        /** maximum rows written per statement round trip */
+        private int maxBatch = 2000;
+        /** maximum samples per history write (InfluxDB likes 5000-10000 points per request) */
+        private int historyMaxBatch = 5000;
+        /** false = do not log successful property reports in the communication log (the dashboard trend needs them) */
+        private boolean logOkProperty = true;
     }
 
     @Data

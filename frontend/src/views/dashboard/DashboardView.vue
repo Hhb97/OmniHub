@@ -14,6 +14,7 @@
         <ReportTrendCard :refresh-key="refreshKey" />
       </el-col>
     </el-row>
+    <IngestStatsCard />
     <AlarmStatsCard :refresh-key="refreshKey" />
     <el-row :gutter="16">
       <el-col :xs="24" :lg="16" class="col">
@@ -37,6 +38,7 @@ import StatCards from './StatCards.vue'
 import OnlineRateCard from './OnlineRateCard.vue'
 import ReportTrendCard from './ReportTrendCard.vue'
 import AlarmStatsCard from './AlarmStatsCard.vue'
+import IngestStatsCard from './IngestStatsCard.vue'
 import RecentDevicesCard from './RecentDevicesCard.vue'
 import TopDevicesCard from './TopDevicesCard.vue'
 import DeviceTrendCard from './DeviceTrendCard.vue'

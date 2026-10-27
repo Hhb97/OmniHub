@@ -189,11 +189,16 @@ class DeviceFlowIntegrationTest {
             assertThat(dev.at("/data/onlineStatus").asText()).isEqualTo("ONLINE");
             assertThat(dev.at("/data/mqttConnected").asBoolean()).isTrue();
         });
+        // history and the communication log are written asynchronously in batches: wait for them
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(call(HttpMethod.GET,
+                "/devices/" + deviceId + "/history?identifiers=temperature", null, adminToken, 200).at("/data/total")
+                .asInt()).isGreaterThanOrEqualTo(1));
+        Thread.sleep(800); // give a wrongly stored duplicate time to show up
         JsonNode hist = call(HttpMethod.GET, "/devices/" + deviceId + "/history?identifiers=temperature", null,
                 adminToken, 200);
         assertThat(hist.at("/data/total").asInt()).as("duplicate and invalid reports must not be stored").isEqualTo(1);
-        JsonNode msgs = call(HttpMethod.GET, "/devices/" + deviceId + "/messages?size=20", null, adminToken, 200);
-        assertThat(msgs.toString()).contains("INVALID");
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(call(HttpMethod.GET,
+                "/devices/" + deviceId + "/messages?size=20", null, adminToken, 200).toString()).contains("INVALID"));
 
         call(HttpMethod.GET, "/devices/" + deviceId + "/history?identifiers=temperature&start=2020-01-01T00:00:00Z",
                 null, adminToken, 400);

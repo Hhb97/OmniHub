@@ -1,0 +1,29 @@
+{
+  "properties": [
+    { "identifier": "temperature", "name": "温度", "dataType": "FLOAT", "unit": "℃", "accessMode": "R", "spec": { "min": -40, "max": 125, "step": 0.01 } },
+    { "identifier": "humidity", "name": "湿度", "dataType": "FLOAT", "unit": "%", "accessMode": "R", "spec": { "min": 0, "max": 100, "step": 0.01 } },
+    { "identifier": "switch", "name": "开关状态", "dataType": "BOOL", "accessMode": "RW", "spec": {} },
+    {
+      "identifier": "mode", "name": "模式", "dataType": "ENUM", "accessMode": "RW",
+      "spec": { "enumValues": [ { "value": "0", "label": "自动" }, { "value": "1", "label": "手动" } ] }
+    },
+    { "identifier": "voltage", "name": "电压", "dataType": "FLOAT", "unit": "V", "accessMode": "R", "spec": { "min": 0, "max": 500, "step": 0.01 } },
+    { "identifier": "power", "name": "功率", "dataType": "FLOAT", "unit": "W", "accessMode": "R", "spec": { "min": 0, "max": 10000, "step": 0.01 } },
+    { "identifier": "targetTemp", "name": "目标温度", "dataType": "FLOAT", "unit": "℃", "accessMode": "RW", "spec": { "min": 10, "max": 40, "step": 0.01 } }
+  ],
+  "events": [
+    { "identifier": "overheat", "name": "设备过热", "level": "WARNING", "description": "温度超过 80℃ 时上报", "outputs": [ { "identifier": "temperature", "name": "温度", "dataType": "FLOAT" } ] },
+    { "identifier": "deviceFault", "name": "设备故障", "level": "ERROR", "description": "设备自检失败", "outputs": [] }
+  ],
+  "services": [
+    { "identifier": "turnOn", "name": "打开开关", "inputs": [], "outputs": [] },
+    { "identifier": "turnOff", "name": "关闭开关", "inputs": [], "outputs": [] },
+    {
+      "identifier": "setTargetTemp", "name": "设置目标温度",
+      "inputs": [ { "identifier": "target", "name": "目标温度", "dataType": "FLOAT", "spec": { "min": 10, "max": 40 } } ],
+      "outputs": []
+    },
+    { "identifier": "reboot", "name": "重启设备", "inputs": [], "outputs": [] },
+    { "identifier": "selfTestFail", "name": "模拟自检失败", "inputs": [], "outputs": [] }
+  ]
+}

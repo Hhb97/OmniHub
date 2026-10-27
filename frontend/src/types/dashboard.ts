@@ -25,3 +25,21 @@ export interface TopDevice {
   name: string
   messageCount: number
 }
+
+export interface IngestSample {
+  ts: number
+  count: number
+  avgDelayMs: number
+  maxDelayMs: number
+}
+
+export interface IngestStats {
+  mode: 'direct' | 'kafka'
+  tps: number
+  peakTps: number
+  avgDelayMs: number
+  maxDelayMs: number
+  droppedTotal: number
+  processedTotal: number
+  series: IngestSample[]
+}

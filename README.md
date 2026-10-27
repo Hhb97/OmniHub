@@ -77,6 +77,8 @@ docker compose up -d --build
 - [设备接入协议](docs/mqtt-protocol.md)
 - [使用本机 PostgreSQL / EMQX / InfluxDB 1.8](docs/local-infra.md)（profile `localext`）
 - [上行消息直连 vs Kafka（压测开关）](docs/kafka-ingest.md)
+- [压测程序（Java，读导出的设备 JSON 走 MQTT 上报）](docs/loadtest.md)
+- [吞吐优化与认证风暴](docs/tuning.md)
 - [故障排查](docs/troubleshooting.md)
 
 ## 已知限制

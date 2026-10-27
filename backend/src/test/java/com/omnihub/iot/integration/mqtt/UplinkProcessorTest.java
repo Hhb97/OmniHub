@@ -50,7 +50,7 @@ class UplinkProcessorTest {
     void setUp() {
         when(runtime.resolve("pk", "dk")).thenReturn(Optional.of(ref));
         when(telemetry.ingestProperties(any(), any(), any())).thenReturn(ACCEPTED);
-        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props);
+        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(props));
     }
 
     private void send(String kind, String json) {
@@ -230,7 +230,7 @@ class UplinkProcessorTest {
     @Test
     void configuredCacheSizeBoundsMemory() {
         props.getDevice().setDedupCacheSize(1);
-        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props);
+        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(props));
 
         send("property/post", "{\"id\":\"a\",\"params\":{\"t\":1}}");
         send("property/post", "{\"id\":\"b\",\"params\":{\"t\":1}}"); // evicts a

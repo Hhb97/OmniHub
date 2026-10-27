@@ -13,7 +13,7 @@
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `IOT_INGEST_MODE` | `direct` | `direct` 或 `kafka` |
-| `IOT_KAFKA_BOOTSTRAP` | `localhost:9092` | Kafka 地址，如 `192.168.221.130:9092` |
+| `IOT_KAFKA_BOOTSTRAP` | `localhost:9092` | Kafka 地址，如 `<host>:9092` |
 | `IOT_KAFKA_TOPIC` | `iot-uplink` | 上行 topic |
 | `IOT_KAFKA_GROUP` | `iot-platform` | 消费组 |
 | `IOT_KAFKA_CONCURRENCY` | `8` | 消费线程数，超过分区数无意义 |
@@ -25,7 +25,7 @@
 例：
 ```powershell
 $env:IOT_INGEST_MODE = "kafka"
-$env:IOT_KAFKA_BOOTSTRAP = "192.168.221.130:9092"
+$env:IOT_KAFKA_BOOTSTRAP = "<host>:9092"
 mvn spring-boot:run "-Dspring-boot.run.profiles=localext"
 ```
 更多生产者/消费者参数在 `application.yml` 的 `spring.kafka` 下（压缩 lz4、`linger.ms=5`、`max.block.ms=3000`、`max-poll-records=500`），可按压测需要调整。
