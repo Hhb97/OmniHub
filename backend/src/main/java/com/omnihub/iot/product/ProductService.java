@@ -54,16 +54,19 @@ public class ProductService {
     }
 
     public ProductVO create(ProductRequest req) {
-        if (req.productKey() == null) {
-            throw BizException.badRequest("产品标识不能为空");
-        }
-        if (mapper.selectCount(new LambdaQueryWrapper<Product>().eq(Product::getProductKey, req.productKey())) > 0) {
+        String key = req.productKey();
+        if (key == null || key.isBlank()) {
+            // not supplied: generate a random, unused key
+            do {
+                key = "pk" + java.util.HexFormat.of().formatHex(java.security.SecureRandom.getSeed(6));
+            } while (keyExists(key));
+        } else if (keyExists(key)) {
             throw BizException.conflict("产品标识已存在");
         }
         Product p = new Product();
         p.setTenantId(CurrentUser.tenantId());
         p.setName(req.name());
-        p.setProductKey(req.productKey());
+        p.setProductKey(key);
         p.setCategory(req.category());
         p.setProtocol(req.protocol() == null ? "MQTT" : req.protocol());
         p.setStatus(req.status() == null ? "ENABLED" : req.status());
@@ -72,6 +75,10 @@ public class ProductService {
         p.setCreatedBy(CurrentUser.username());
         mapper.insert(p);
         return toVO(p, 0L);
+    }
+
+    private boolean keyExists(String key) {
+        return mapper.selectCount(new LambdaQueryWrapper<Product>().eq(Product::getProductKey, key)) > 0;
     }
 
     public ProductVO update(Long id, ProductRequest req) {

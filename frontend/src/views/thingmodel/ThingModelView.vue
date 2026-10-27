@@ -11,6 +11,7 @@
         <el-tag v-if="dirty" type="warning" size="small">有未保存的修改</el-tag>
         <div class="spacer" />
         <el-button @click="openVersions">版本历史</el-button>
+        <el-button v-if="canEdit && draft" @click="jsonVisible = true">JSON 批量编辑</el-button>
         <el-button v-if="canEdit" :disabled="!dirty" @click="discard">放弃修改</el-button>
         <el-button v-if="canEdit" type="primary" :loading="saving" :disabled="!dirty" @click="save">
           保存为新版本
@@ -34,6 +35,8 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <JsonImportDialog v-model="jsonVisible" :current="draft" @apply="(b) => (draft = b)" />
 
     <el-drawer v-model="versionsVisible" title="版本历史" size="420px">
       <el-table v-loading="versionsLoading" :data="versions" size="small">
@@ -60,6 +63,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Product, ThingModel, ThingModelBody, ThingModelVersion } from '@/types'
 import { formatTime } from '@/utils/format'
 import EventTab from './EventTab.vue'
+import JsonImportDialog from './JsonImportDialog.vue'
 import PropertyTab from './PropertyTab.vue'
 import ServiceTab from './ServiceTab.vue'
 import { cloneDeep } from './specUtil'
@@ -78,6 +82,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const tab = ref('properties')
+const jsonVisible = ref(false)
 
 const bodyOf = (m: ThingModelBody): ThingModelBody => ({
   properties: m.properties ?? [],

@@ -15,7 +15,7 @@ import type {
 export const productApi = {
   list: (params: PageQuery & ProductQuery) => http.get<PageResult<Product>>('/products', params),
   get: (id: number) => http.get<Product>(`/products/${id}`),
-  create: (body: ProductForm) => http.post<Product>('/products', body),
+  create: (body: Partial<ProductForm>) => http.post<Product>('/products', body),
   update: (id: number, body: Partial<ProductForm>) => http.put<Product>(`/products/${id}`, body),
   remove: (id: number) => http.delete<void>(`/products/${id}`),
   devices: (id: number, params: PageQuery) =>

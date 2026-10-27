@@ -15,7 +15,7 @@
           v-model.trim="form.productKey"
           maxlength="64"
           :disabled="isEdit"
-          placeholder="创建后不可修改"
+          placeholder="留空则自动生成，创建后不可修改"
         />
       </el-form-item>
       <el-form-item label="分类" prop="category">
@@ -76,8 +76,7 @@ const form = reactive<ProductForm>(blank())
 const rules: FormRules = {
   name: [{ required: true, message: '请输入产品名称', trigger: 'blur' }],
   productKey: [
-    { required: true, message: '请输入 ProductKey', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_-]+$/, message: '仅支持字母、数字、下划线、中划线', trigger: 'blur' },
+    { pattern: /^([a-zA-Z0-9_-]{3,64})?$/, message: '3-64 位字母、数字、下划线、中划线；留空则自动生成', trigger: 'blur' },
   ],
   protocol: [{ required: true, message: '请选择协议', trigger: 'change' }],
 }
@@ -106,7 +105,7 @@ async function submit() {
       const { productKey: _k, ...rest } = form
       await productApi.update(props.product.id, rest)
     } else {
-      await productApi.create({ ...form })
+      await productApi.create({ ...form, productKey: form.productKey || undefined })
     }
     ElMessage.success('保存成功')
     visible.value = false

@@ -13,6 +13,13 @@
       :closable="false"
       title="设备密钥仅显示这一次，关闭后将无法再次查看，请立即复制并妥善保存！"
     />
+    <div v-if="device" class="quick">
+      <el-button type="primary" @click="copyConnectionJson">复制接入 JSON</el-button>
+      <span class="muted"
+        >含 Broker、ClientId、用户名、密码、Topic；字段名与 simulator/config.local.json
+        兼容，可直接粘贴使用</span
+      >
+    </div>
     <el-descriptions v-if="device" :column="1" border class="desc">
       <el-descriptions-item label="设备名称">{{ device.name }}</el-descriptions-item>
       <el-descriptions-item label="DeviceKey"
@@ -45,7 +52,9 @@
         >
       </el-table-column>
     </el-table>
-    <p class="muted tip">Topic 规范详见 docs/mqtt-protocol.md；clientId 与用户名相同，密码为上方设备密钥。</p>
+    <p class="muted tip">
+      Topic 规范详见 docs/mqtt-protocol.md；clientId 与用户名相同，密码为上方设备密钥。
+    </p>
 
     <template #footer>
       <el-checkbox v-model="confirmed">我已复制并保存密钥</el-checkbox>
@@ -66,14 +75,51 @@ const confirmed = ref(false)
 
 const broker = mqttBroker()
 const clientId = computed(() => props.device?.clientId || props.device?.deviceKey || '')
+
+/** One JSON blob with everything a test program needs to connect. Keys brokerUrl/productKey/deviceKey/deviceSecret match simulator/config.local.json. */
+function copyConnectionJson() {
+  const d = props.device
+  if (!d) return
+  const b = mqttBroker()
+  const brokerUrl = b.startsWith('<')
+    ? `mqtt://${window.location.hostname}:1883`
+    : /^[a-z]+:\/\//.test(b)
+      ? b
+      : `mqtt://${b}`
+  const json = {
+    brokerUrl,
+    productKey: d.productKey,
+    deviceKey: d.deviceKey,
+    deviceSecret: props.secret,
+    clientId: clientId.value,
+    username: clientId.value,
+    password: props.secret,
+    topics: {
+      propertyPost: `iot/${d.productKey}/${d.deviceKey}/property/post`,
+      eventPost: `iot/${d.productKey}/${d.deviceKey}/event/post`,
+      status: `iot/${d.productKey}/${d.deviceKey}/status`,
+      commandReply: `iot/${d.productKey}/${d.deviceKey}/command/reply`,
+      commandDown: `iot/${d.productKey}/${d.deviceKey}/command/down`,
+    },
+  }
+  void copyText(JSON.stringify(json, null, 2), '接入 JSON 已复制')
+}
+
 const topics = computed(() =>
   props.device?.productKey ? mqttTopics(props.device.productKey, props.device.deviceKey) : [],
 )
 </script>
 
 <style scoped>
-.desc {
+.quick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 16px;
+  font-size: 12px;
+}
+.desc {
+  margin-top: 12px;
 }
 .secret {
   word-break: break-all;
