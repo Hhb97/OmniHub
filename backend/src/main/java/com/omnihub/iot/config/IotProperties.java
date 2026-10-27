@@ -14,6 +14,8 @@ public class IotProperties {
     private String dashboardZone = "UTC";
     private Mqtt mqtt = new Mqtt();
     private Device device = new Device();
+    private History history = new History();
+    private Influxdb influxdb = new Influxdb();
     private EmbeddedPostgres embeddedPostgres = new EmbeddedPostgres();
 
     @Data
@@ -49,6 +51,26 @@ public class IotProperties {
     public static class Device {
         private int offlineSweepSeconds = 15;
         private int dedupCacheSize = 20000;
+    }
+
+    @Data
+    public static class History {
+        /** postgres | influxdb */
+        private String store = "postgres";
+    }
+
+    @Data
+    public static class Influxdb {
+        private String url = "http://localhost:8086";
+        private String database = "iot";
+        private String username = "";
+        private String password = "";
+        /** empty = the database's default retention policy */
+        private String retentionPolicy = "";
+        /** run CREATE DATABASE on startup (needs a user allowed to do so) */
+        private boolean createDatabase = false;
+        /** when createDatabase is true and > 0, also create a default retention policy of this many days */
+        private int retentionDays = 0;
     }
 
     @Data

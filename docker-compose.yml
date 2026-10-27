@@ -77,6 +77,12 @@ services:
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
       IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
       IOT_API_DOCS_ENABLED: ${IOT_API_DOCS_ENABLED:-false}
+      # history store: postgres (default) or influxdb (needs IOT_INFLUX_URL to a reachable InfluxDB 1.x)
+      IOT_HISTORY_STORE: ${IOT_HISTORY_STORE:-postgres}
+      IOT_INFLUX_URL: ${IOT_INFLUX_URL:-http://localhost:8086}
+      IOT_INFLUX_DB: ${IOT_INFLUX_DB:-iot}
+      IOT_INFLUX_USER: ${IOT_INFLUX_USER:-}
+      IOT_INFLUX_PASSWORD: ${IOT_INFLUX_PASSWORD:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
       interval: 10s

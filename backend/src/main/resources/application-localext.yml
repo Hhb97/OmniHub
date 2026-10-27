@@ -1,0 +1,47 @@
+# Development against infrastructure already installed on the machine:
+#   PostgreSQL (localhost:5432), EMQX (localhost:1883) and InfluxDB 1.8 (localhost:8086).
+# Activate with: -Dspring-boot.run.profiles=localext
+# Nothing secret is stored here: passwords and the JWT secret must come from environment variables.
+# Everything below can be overridden with the same IOT_* variables as in application.yml.
+spring:
+  datasource:
+    url: ${IOT_DB_URL:jdbc:postgresql://localhost:5432/iot?stringtype=unspecified}
+    username: ${IOT_DB_USER:iot}
+    password: ${IOT_DB_PASSWORD}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+iot:
+  security:
+    jwt-secret: ${IOT_JWT_SECRET}
+  admin:
+    initial-password: ${IOT_ADMIN_PASSWORD}
+  cors-allowed-origins: http://localhost:5173
+  dashboard-zone: ${IOT_DASHBOARD_ZONE:Asia/Shanghai}
+  mqtt:
+    broker-url: ${IOT_MQTT_BROKER_URL:tcp://localhost:1883}
+    platform-username: ${IOT_MQTT_USERNAME:platform}
+    platform-password: ${IOT_MQTT_PASSWORD}
+    http-auth-token: ${IOT_MQTT_HTTP_AUTH_TOKEN}
+    embedded-broker:
+      enabled: false
+  embedded-postgres:
+    enabled: false
+  history:
+    store: ${IOT_HISTORY_STORE:influxdb}
+  influxdb:
+    url: ${IOT_INFLUX_URL:http://localhost:8086}
+    database: ${IOT_INFLUX_DB:iot}
+    username: ${IOT_INFLUX_USER:}
+    password: ${IOT_INFLUX_PASSWORD:}
+    retention-policy: ${IOT_INFLUX_RP:}
+    create-database: ${IOT_INFLUX_CREATE_DB:true}
+    retention-days: ${IOT_INFLUX_RETENTION_DAYS:90}
+
+logging:
+  level:
+    com.omnihub: DEBUG

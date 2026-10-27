@@ -72,9 +72,11 @@ public class TelemetryService {
     private final DeviceService deviceService;
     private final ConfigService config;
     private final ApplicationEventPublisher events;
+    private final HistoryStore history;
 
     public TelemetryService(JdbcTemplate jdbc, ThingModelService thingModels, DeviceService deviceService,
-            ConfigService config, ApplicationEventPublisher events) {
+            ConfigService config, ApplicationEventPublisher events, HistoryStore history) {
+        this.history = history;
         this.jdbc = jdbc;
         this.thingModels = thingModels;
         this.deviceService = deviceService;
@@ -110,21 +112,19 @@ public class TelemetryService {
 
     private void persist(Long deviceId, Map<String, JsonNode> values, Instant ts) {
         Timestamp t = Timestamp.from(ts);
-        List<Object[]> hist = new ArrayList<>();
         List<Object[]> latest = new ArrayList<>();
-        values.forEach((k, v) -> {
-            String json = Jsons.toJson(v);
-            hist.add(new Object[] { deviceId, k, ValueValidator.numeric(v), json, t });
-            latest.add(new Object[] { deviceId, k, json, t });
-        });
-        jdbc.batchUpdate("""
-                INSERT INTO iot_device_property_history (device_id, identifier, num_value, value, ts)
-                VALUES (?, ?, ?, ?::jsonb, ?)""", hist);
+        values.forEach((k, v) -> latest.add(new Object[] { deviceId, k, Jsons.toJson(v), t }));
         // never let a late (out-of-order) report overwrite a newer latest value
         jdbc.batchUpdate("""
                 INSERT INTO iot_device_latest (device_id, identifier, value, reported_at) VALUES (?, ?, ?::jsonb, ?)
                 ON CONFLICT (device_id, identifier) DO UPDATE SET value = EXCLUDED.value, reported_at = EXCLUDED.reported_at
                 WHERE iot_device_latest.reported_at <= EXCLUDED.reported_at""", latest);
+        try {
+            history.write(deviceId, values, ts);
+        } catch (Exception e) {
+            // the latest value is already stored; losing one history sample must not drop the whole message
+            log.error("Writing property history failed for device {}: {}", deviceId, e.getMessage());
+        }
     }
 
     /** @return error message, or null when the event was accepted and stored. */
@@ -164,22 +164,9 @@ public class TelemetryService {
         List<String> ids = identifiers(identifiers);
         int sz = com.omnihub.iot.common.PageQuery.size(size);
         long pg = com.omnihub.iot.common.PageQuery.page(page);
-        String in = placeholders(ids.size());
-        List<Object> args = new ArrayList<>(List.of(deviceId));
-        args.addAll(ids);
-        args.add(Timestamp.from(range[0]));
-        args.add(Timestamp.from(range[1]));
-        String where = " WHERE device_id = ? AND identifier IN (" + in + ") AND ts >= ? AND ts < ?";
-        Long total = jdbc.queryForObject("SELECT count(*) FROM iot_device_property_history" + where, Long.class,
-                args.toArray());
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(sz);
-        pageArgs.add((pg - 1) * sz);
-        List<HistoryVO> rows = jdbc.query("SELECT identifier, value::text, ts FROM iot_device_property_history" + where
-                + " ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?",
-                (rs, i) -> new HistoryVO(rs.getString(1), Jsons.parse(rs.getString(2)), rs.getTimestamp(3).toInstant()),
-                pageArgs.toArray());
-        return PageResult.of(rows, total == null ? 0 : total, pg, sz);
+        HistoryStore.Page r = history.page(deviceId, ids, range[0], range[1], sz, (int) ((pg - 1) * sz));
+        return PageResult.of(r.rows().stream().map(x -> new HistoryVO(x.identifier(), x.value(), x.ts())).toList(),
+                r.total(), pg, sz);
     }
 
     public TrendVO trend(Long deviceId, List<String> identifiers, String start, String end, String interval) {
@@ -203,26 +190,7 @@ public class TelemetryService {
         List<SeriesVO> series = new ArrayList<>();
         for (String id : ids) {
             ThingModelDefs.Property p = model.property(id);
-            List<List<Object>> points = new ArrayList<>();
-            if (bucket == 0) {
-                jdbc.query("""
-                        SELECT ts, value::text FROM iot_device_property_history
-                        WHERE device_id = ? AND identifier = ? AND ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?""",
-                        rs -> {
-                            points.add(List.of(rs.getTimestamp(1).getTime(), Jsons.parse(rs.getString(2))));
-                        }, deviceId, id, Timestamp.from(range[0]), Timestamp.from(range[1]), MAX_POINTS);
-                java.util.Collections.reverse(points);
-            } else {
-                final long b = bucket;
-                jdbc.query("""
-                        SELECT floor(extract(epoch FROM ts) / ?) * ? AS bucket, avg(num_value)
-                        FROM iot_device_property_history
-                        WHERE device_id = ? AND identifier = ? AND ts >= ? AND ts < ? AND num_value IS NOT NULL
-                        GROUP BY 1 ORDER BY 1""", rs -> {
-                            points.add(List.of((long) (rs.getDouble(1) * 1000),
-                                    Math.round(rs.getDouble(2) * 1000.0) / 1000.0));
-                        }, b, b, deviceId, id, Timestamp.from(range[0]), Timestamp.from(range[1]));
-            }
+            List<List<Object>> points = history.series(deviceId, id, range[0], range[1], bucket, MAX_POINTS);
             series.add(new SeriesVO(id, p == null ? id : p.name(), p == null ? null : p.unit(), points));
         }
         return new TrendVO(bucket == 0 ? "RAW" : bucket + "s", series);
@@ -275,12 +243,12 @@ public class TelemetryService {
         try {
             int histDays = config.getInt("retention.history.days", 90);
             int msgDays = config.getInt("retention.message-log.days", 7);
-            int h = jdbc.update("DELETE FROM iot_device_property_history WHERE ts < now() - make_interval(days => ?)",
-                    histDays);
+            history.purgeOlderThan(histDays);
             int m = jdbc.update("DELETE FROM iot_device_message_log WHERE created_at < now() - make_interval(days => ?)",
                     msgDays);
             int e = jdbc.update("DELETE FROM iot_device_event WHERE ts < now() - make_interval(days => ?)", histDays);
-            log.info("Retention purge removed {} history rows, {} message logs, {} events", h, m, e);
+            log.info("Retention purge removed {} message logs and {} events (history store: {})", m, e,
+                    history.getClass().getSimpleName());
         } catch (Exception ex) {
             log.warn("Retention purge failed: {}", ex.getMessage());
         }

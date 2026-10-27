@@ -19,6 +19,7 @@ docs/       架构、API 契约、数据库、MQTT 协议、故障排查
 | 真实 MQTT 链路（认证、ACL、上报、指令、遗嘱离线） | 已用嵌入式 Broker 实际验证：`scripts/e2e-smoke.mjs` 29 项、`simulator/src/e2e-scenarios.js` 40 项通过 |
 | 前端 lint / build | 已通过；登录、仪表盘、设备实时数据、下发指令已在浏览器对真实后端手动验证，其余页面仅确认加载无控制台报错 |
 | JUnit 单元/集成测试（`backend/src/test`） | **已编写，但尚未运行，结果未知** |
+| `localext` profile、InfluxDB 历史存储、EMQX 对接脚本 | **仅编译通过，未联调**（写代码时这些服务未运行）；改动后默认 PG 历史存储路径也未重新跑测试 |
 | `docker-compose.yml`、Dockerfile、EMQX 认证对接 | **未运行**（开发机无 Docker）。外部 Broker 下无法强制踢掉已连接设备 |
 | Java 21 | 开发机只有 JDK 17，pom 默认 `java.version=17`，用 `-Djava.version=21` 切换，未在 21 上构建 |
 
@@ -74,6 +75,7 @@ docker compose up -d --build
 - [API 契约](docs/api-contract.md)（运行时可在 `local` profile 下看 Swagger）
 - [数据库设计](docs/database.md)
 - [设备接入协议](docs/mqtt-protocol.md)
+- [使用本机 PostgreSQL / EMQX / InfluxDB 1.8](docs/local-infra.md)（profile `localext`）
 - [故障排查](docs/troubleshooting.md)
 
 ## 已知限制
