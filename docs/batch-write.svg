@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 800" width="1300" height="800" font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/></marker>
+  </defs>
+  <rect width="1300" height="800" fill="#ffffff"/>
+  <text x="40" y="42" font-size="22" font-weight="700" fill="#0f172a">上行数据的批量写入</text>
+  <text x="40" y="64" font-size="13" fill="#64748b">处理线程只入队不等库；后台线程按批写入。实时推送与告警评估在入队后立即进行，不等落库。</text>
+
+  <!-- ================= row 1: receive path ================= -->
+  <g font-size="13" text-anchor="middle">
+    <rect x="40" y="92" width="150" height="56" rx="8" fill="#f1f5f9" stroke="#64748b"/>
+    <text x="115" y="116" font-weight="600" fill="#0f172a">设备 / 压测程序</text><text x="115" y="134" font-size="11" fill="#475569">MQTT 上报</text>
+    <rect x="236" y="92" width="130" height="56" rx="8" fill="#fff7ed" stroke="#ea580c"/>
+    <text x="301" y="116" font-weight="600" fill="#9a3412">EMQX</text><text x="301" y="134" font-size="11" fill="#475569">Broker</text>
+    <rect x="412" y="92" width="190" height="56" rx="8" fill="#ecfdf5" stroke="#16a34a"/>
+    <text x="507" y="116" font-weight="600" fill="#166534">MQTT 网关</text><text x="507" y="134" font-size="11" fill="#475569">订阅上行 · 按设备分线程</text>
+    <rect x="648" y="92" width="250" height="56" rx="8" fill="#ecfdf5" stroke="#16a34a"/>
+    <text x="773" y="116" font-weight="600" fill="#166534">UplinkProcessor</text><text x="773" y="134" font-size="11" fill="#475569">解析 · 设备校验 · 去重 · 物模型校验</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.6" marker-end="url(#a)">
+    <line x1="190" y1="120" x2="236" y2="120"/><line x1="366" y1="120" x2="412" y2="120"/><line x1="602" y1="120" x2="648" y2="120"/>
+  </g>
+
+  <!-- events side -->
+  <rect x="940" y="92" width="320" height="56" rx="8" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="5 3"/>
+  <text x="1100" y="116" font-size="13" font-weight="600" text-anchor="middle" fill="#334155">Spring 事件（入队后立即发布）</text>
+  <text x="1100" y="134" font-size="11" text-anchor="middle" fill="#475569">WebSocket 推送 · 告警评估 · 在线状态变化</text>
+  <line x1="898" y1="120" x2="940" y2="120" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#a)"/>
+
+  <!-- ================= row 2: three entry points ================= -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="300" y="214" width="300" height="60" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="450" y="238" font-size="13" font-weight="600" fill="#0f172a">TelemetryService.persist()</text><text x="450" y="257" font-size="11" fill="#475569">校验通过的每个属性 → 一个 Sample</text>
+    <rect x="640" y="214" width="240" height="60" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="760" y="238" font-size="13" font-weight="600" fill="#0f172a">MessageLogger.log()</text><text x="760" y="257" font-size="11" fill="#475569">每条消息一行通信记录</text>
+    <rect x="920" y="214" width="300" height="60" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="1070" y="238" font-size="13" font-weight="600" fill="#0f172a">DeviceRuntime.touch()</text><text x="1070" y="257" font-size="11" fill="#475569">记录最后通信时间（纯内存）</text>
+  </g>
+  <path d="M773,148 L773,176 L450,176 L450,214" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M773,148 L773,176 L760,176 L760,214" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M773,148 L773,176 L1070,176 L1070,214" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ================= row 3: queues ================= -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="130" y="340" width="230" height="64" rx="8" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+    <text x="245" y="364" font-size="13" font-weight="600" fill="#713f12">队列 latest</text><text x="245" y="383" font-size="11" fill="#475569">每批 ≤ 2000 · 独立线程</text>
+    <rect x="390" y="340" width="230" height="64" rx="8" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+    <text x="505" y="364" font-size="13" font-weight="600" fill="#713f12">队列 history</text><text x="505" y="383" font-size="11" fill="#475569">每批 ≤ 5000 · 独立线程</text>
+    <rect x="650" y="340" width="230" height="64" rx="8" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+    <text x="765" y="364" font-size="13" font-weight="600" fill="#713f12">队列 message-log</text><text x="765" y="383" font-size="11" fill="#475569">每批 ≤ 2000 · 独立线程</text>
+    <rect x="940" y="340" width="280" height="64" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+    <text x="1080" y="364" font-size="13" font-weight="600" fill="#075985">内存 commAt + onlineKnown</text><text x="1080" y="383" font-size="11" fill="#475569">已在线设备：收到消息零数据库访问</text>
+  </g>
+  <path d="M450,274 L450,308 L245,308 L245,340" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <path d="M450,274 L450,308 L505,308 L505,340" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="760" y1="274" x2="760" y2="340" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="1070" y1="274" x2="1070" y2="340" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="300" y="302" font-size="10" fill="#475569">offer()：满了就丢弃并计数，不阻塞</text>
+
+  <!-- ================= row 4: flush logic ================= -->
+  <g font-size="11" text-anchor="middle" fill="#334155">
+    <rect x="130" y="470" width="230" height="84" rx="8" fill="#ffffff" stroke="#16a34a"/>
+    <text x="245" y="490" font-size="12" font-weight="600" fill="#166534">flushLatest</text>
+    <text x="245" y="508">批内同设备同属性只留最新</text><text x="245" y="524">INSERT … unnest … ON CONFLICT</text><text x="245" y="540">旧时间戳不覆盖新值</text>
+    <rect x="390" y="470" width="230" height="84" rx="8" fill="#ffffff" stroke="#16a34a"/>
+    <text x="505" y="490" font-size="12" font-weight="600" fill="#166534">flushHistory → HistoryStore</text>
+    <text x="505" y="508">PG：INSERT … unnest（每 5000 行）</text><text x="505" y="524">Influx：行协议，每 5000 点一次 HTTP</text><text x="505" y="540">失败等 300ms 重试一次</text>
+    <rect x="650" y="470" width="230" height="84" rx="8" fill="#ffffff" stroke="#16a34a"/>
+    <text x="765" y="490" font-size="12" font-weight="600" fill="#166534">write（后台线程）</text>
+    <text x="765" y="508">脱敏 + 截断（不占处理线程）</text><text x="765" y="524">INSERT … unnest（8 个数组）</text><text x="765" y="540">created_at 取入队时刻</text>
+    <rect x="940" y="470" width="280" height="84" rx="8" fill="#ffffff" stroke="#0284c7"/>
+    <text x="1080" y="490" font-size="12" font-weight="600" fill="#075985">flushLastComm（每 3 秒 / 离线扫描前）</text>
+    <text x="1080" y="508">一条 UPDATE … unnest 写 last_comm_at</text><text x="1080" y="524">首次上线才单条 UPDATE 并发状态事件</text><text x="1080" y="540">断开 / 判离线 → 移出 onlineKnown</text>
+  </g>
+  <g stroke="#16a34a" stroke-width="1.5" marker-end="url(#g)">
+    <line x1="245" y1="404" x2="245" y2="470"/><line x1="505" y1="404" x2="505" y2="470"/><line x1="765" y1="404" x2="765" y2="470"/>
+  </g>
+  <line x1="1080" y1="404" x2="1080" y2="470" stroke="#0284c7" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- ================= row 5: stores ================= -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="130" y="620" width="230" height="64" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+    <text x="245" y="644" font-size="13" font-weight="600" fill="#581c87">PostgreSQL</text><text x="245" y="663" font-size="11" fill="#475569">iot_device_latest</text>
+    <rect x="390" y="620" width="110" height="64" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+    <text x="445" y="644" font-size="13" font-weight="600" fill="#581c87">PostgreSQL</text><text x="445" y="663" font-size="10" fill="#475569">property_history</text>
+    <rect x="510" y="620" width="110" height="64" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="565" y="644" font-size="13" font-weight="600" fill="#581c87">InfluxDB 1.x</text><text x="565" y="663" font-size="10" fill="#475569">iot.history.store</text>
+    <rect x="650" y="620" width="230" height="64" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+    <text x="765" y="644" font-size="13" font-weight="600" fill="#581c87">PostgreSQL</text><text x="765" y="663" font-size="11" fill="#475569">iot_device_message_log</text>
+    <rect x="940" y="620" width="280" height="64" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+    <text x="1080" y="644" font-size="13" font-weight="600" fill="#581c87">PostgreSQL</text><text x="1080" y="663" font-size="11" fill="#475569">iot_device.last_comm_at / online_status</text>
+  </g>
+  <g stroke="#475569" stroke-width="1.6" marker-end="url(#a)">
+    <line x1="245" y1="554" x2="245" y2="620"/><line x1="765" y1="554" x2="765" y2="620"/><line x1="1080" y1="554" x2="1080" y2="620"/>
+    <line x1="445" y1="554" x2="445" y2="620"/>
+  </g>
+  <line x1="565" y1="554" x2="565" y2="620" stroke="#9333ea" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#a)"/>
+
+  <!-- ================= notes ================= -->
+  <rect x="40" y="722" width="1220" height="58" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="60" y="745" font-size="12" fill="#334155">• 队列满：新数据丢弃并计数（日志每 5 秒一条 WARN）　• 整批写失败：该批丢弃并记 ERROR（Influx 先重试一次）　• 正常关闭：写完队列再退出；强杀/崩溃会丢未写数据</text>
+  <text x="60" y="766" font-size="12" fill="#334155">• 批大小自适应：写库期间新数据累积，下一批自然更大，语句数不随消息数线性增长　• 最新值与历史是两个独立队列，其中一个失败不影响另一个</text>
+</svg>

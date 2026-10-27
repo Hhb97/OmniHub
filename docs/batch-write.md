@@ -6,32 +6,15 @@
 
 ## 1. 总览
 
-```
-设备 → EMQX → MqttGateway → UplinkProcessor（解析、校验、去重）
-                                   │
-            ┌──────────────────────┼───────────────────────────────┐
-            ▼                      ▼                               ▼
-   TelemetryService          MessageLogger                  DeviceRuntime
-   ingestProperties          log()                          touch()
-   (物模型校验通过后)         (每条消息一行通信记录)          (设备最后通信时间)
-            │ persist()             │ offer()                       │ 写内存 commAt
-      ┌─────┴──────┐                ▼                               ▼
-      ▼            ▼        BatchQueue "message-log"       @Scheduled 每 3 秒
-BatchQueue     BatchQueue         │                         flushLastComm()
-"latest"       "history"          ▼                               │
-      │            │      iot_device_message_log                  ▼
-      ▼            ▼      （一批一条 unnest INSERT）      iot_device.last_comm_at
- iot_device_   HistoryStore                                （一批一条 UPDATE）
- latest        ├─ PostgresHistoryStore → iot_device_property_history（unnest INSERT）
-（unnest       └─ InfluxHistoryStore   → InfluxDB（行协议，每 5000 点一次 HTTP）
- upsert）
-```
+![批量写入总览](batch-write.svg)
 
 处理消息的线程（MQTT 处理线程）只做“放进队列”，不等数据库。Spring 事件（WebSocket 推送、告警评估）在入队之后立刻发布，**不等落库**。
 
 ## 2. 通用组件：BatchQueue
 
 文件：`common/BatchQueue.java`。三个写入队列（`latest`、`history`、`message-log`）都用它。
+
+![BatchQueue 的工作方式](batch-queue.svg)
 
 **结构**：一个有界队列（`ArrayBlockingQueue`）+ 一个后台守护线程（名字 `batch-<队列名>`）+ 一个“写出回调”。
 

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" font-family="'Microsoft YaHei','PingFang SC','Segoe UI',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+  </defs>
+  <rect width="1200" height="520" fill="#ffffff"/>
+  <text x="40" y="40" font-size="22" font-weight="700" fill="#0f172a">BatchQueue 的工作方式</text>
+  <text x="40" y="62" font-size="13" fill="#64748b">common/BatchQueue.java：有界队列 + 一个后台线程 + 写出回调，批大小随负载自适应</text>
+
+  <!-- producers -->
+  <g font-size="13" text-anchor="middle">
+    <rect x="40" y="120" width="170" height="130" rx="8" fill="#ecfdf5" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="125" y="150" font-weight="600" fill="#166534">MQTT 处理线程</text>
+    <text x="125" y="174" font-size="11" fill="#475569">多个线程并发调用</text>
+    <text x="125" y="192" font-size="11" fill="#475569">offer(item)</text>
+    <text x="125" y="214" font-size="11" fill="#166534">永不阻塞，立即返回</text>
+  </g>
+  <line x1="210" y1="185" x2="290" y2="185" stroke="#475569" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <!-- queue -->
+  <rect x="290" y="130" width="330" height="110" rx="8" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+  <text x="455" y="156" font-size="13" font-weight="600" text-anchor="middle" fill="#713f12">ArrayBlockingQueue（容量 200000）</text>
+  <g stroke="#ca8a04" fill="#fffbeb">
+    <rect x="310" y="176" width="28" height="36"/><rect x="340" y="176" width="28" height="36"/><rect x="370" y="176" width="28" height="36"/>
+    <rect x="400" y="176" width="28" height="36"/><rect x="430" y="176" width="28" height="36"/><rect x="460" y="176" width="28" height="36"/>
+    <rect x="490" y="176" width="28" height="36"/><rect x="520" y="176" width="28" height="36"/><rect x="550" y="176" width="28" height="36"/>
+  </g>
+  <text x="590" y="200" font-size="22" fill="#ca8a04">…</text>
+  <text x="455" y="230" font-size="11" text-anchor="middle" fill="#475569">先进先出：同设备的数据按进入顺序写出</text>
+
+  <!-- full -> drop -->
+  <path d="M455,130 L455,92 L860,92" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#r)"/>
+  <rect x="860" y="72" width="300" height="44" rx="8" fill="#fef2f2" stroke="#dc2626"/>
+  <text x="1010" y="92" font-size="12" font-weight="600" text-anchor="middle" fill="#991b1b">队列满：丢弃该条并计数</text>
+  <text x="1010" y="108" font-size="11" text-anchor="middle" fill="#475569">每 5 秒最多一条 WARN，不拖住 MQTT 线程</text>
+
+  <!-- worker loop -->
+  <line x1="620" y1="185" x2="700" y2="185" stroke="#475569" stroke-width="1.8" marker-end="url(#a)"/>
+  <rect x="700" y="120" width="300" height="250" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+  <text x="850" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="#075985">后台线程 batch-&lt;队列名&gt;（循环）</text>
+  <g font-size="12" fill="#0f172a">
+    <rect x="720" y="162" width="260" height="38" rx="6" fill="#ffffff" stroke="#0284c7"/>
+    <text x="850" y="179" text-anchor="middle" font-weight="600">① poll(100 ms) 取第一条</text><text x="850" y="193" text-anchor="middle" font-size="10" fill="#475569">空队列就继续等</text>
+    <rect x="720" y="214" width="260" height="38" rx="6" fill="#ffffff" stroke="#0284c7"/>
+    <text x="850" y="231" text-anchor="middle" font-weight="600">② drainTo(batch, maxBatch − 1)</text><text x="850" y="245" text-anchor="middle" font-size="10" fill="#475569">一次取走队列里现有的全部（有上限）</text>
+    <rect x="720" y="266" width="260" height="38" rx="6" fill="#ffffff" stroke="#0284c7"/>
+    <text x="850" y="283" text-anchor="middle" font-weight="600">③ sink(batch) 一批写一次</text><text x="850" y="297" text-anchor="middle" font-size="10" fill="#475569">一条 SQL / 一次 HTTP</text>
+    <rect x="720" y="318" width="260" height="38" rx="6" fill="#ffffff" stroke="#0284c7"/>
+    <text x="850" y="335" text-anchor="middle" font-weight="600">④ 清空批，回到 ①</text><text x="850" y="349" text-anchor="middle" font-size="10" fill="#475569">写库期间新数据在队列里累积</text>
+  </g>
+  <g stroke="#0284c7" stroke-width="1.3" marker-end="url(#a)"><line x1="850" y1="200" x2="850" y2="214"/><line x1="850" y1="252" x2="850" y2="266"/><line x1="850" y1="304" x2="850" y2="318"/></g>
+  <path d="M980,337 L1010,337 L1010,181 L980,181" fill="none" stroke="#0284c7" stroke-width="1.3" marker-end="url(#a)"/>
+
+  <!-- sink result -->
+  <line x1="850" y1="370" x2="850" y2="410" stroke="#475569" stroke-width="1.8" marker-end="url(#a)"/>
+  <rect x="700" y="410" width="300" height="60" rx="8" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5"/>
+  <text x="850" y="436" font-size="13" font-weight="600" text-anchor="middle" fill="#581c87">PostgreSQL / InfluxDB</text>
+  <text x="850" y="455" font-size="11" text-anchor="middle" fill="#475569">回调抛异常 → 整批丢弃并记 ERROR，线程继续</text>
+
+  <!-- adaptive explanation -->
+  <rect x="40" y="290" width="570" height="180" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="60" y="316" font-size="13" font-weight="600" fill="#0f172a">为什么批会自适应（group commit）</text>
+  <g font-size="12" fill="#334155">
+    <text x="60" y="342">• 负载低：来一条取一条，批很小，几乎没有额外等待。</text>
+    <text x="60" y="364">• 负载高：线程在写库时新数据继续进队列，下一轮 drainTo</text>
+    <text x="72" y="382">一次取走这段时间累积的全部，批自然变大（最多 maxBatch）。</text>
+    <text x="60" y="404">• 结果：每秒语句数≈每秒写出的批数，不随消息数线性增长。</text>
+    <text x="60" y="426">• close()：不再接收后，把队列里剩下的写完再退出（最多等 10 秒）。</text>
+    <text x="60" y="448">• 三个队列：latest（≤2000/批）、history（≤5000/批）、message-log（≤2000/批）。</text>
+  </g>
+</svg>
