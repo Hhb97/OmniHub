@@ -7,3 +7,5 @@ backend/data/
 *.log
 .idea/
 .vscode/
+backend/loadtest.properties
+loadtest.properties

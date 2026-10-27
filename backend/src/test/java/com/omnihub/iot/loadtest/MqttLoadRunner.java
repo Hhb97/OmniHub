@@ -51,28 +51,63 @@ public final class MqttLoadRunner {
     record Config(String devicesFile, String modelFile, String broker, int qos, int limit, int offset, int shardIndex,
             int shardCount, double rate, int duration, int ramp, boolean midValues, String csv, int reportSeconds) {
 
+        /**
+         * Settings come from a properties file (same keys as the command-line options, without the leading --) and
+         * are overridden by command-line options. File lookup: --config, env LT_CONFIG, ./loadtest.properties,
+         * ./backend/loadtest.properties.
+         */
         static Config parse(String[] args) {
-            Map<String, String> o = new HashMap<>();
+            Map<String, String> cli = new HashMap<>();
             for (int i = 0; i < args.length; i++) {
                 if (!args[i].startsWith("--")) {
                     continue;
                 }
                 String k = args[i].substring(2);
                 if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
-                    o.put(k, args[++i]);
+                    cli.put(k, args[++i]);
                 } else {
-                    o.put(k, "true");
+                    cli.put(k, "true");
                 }
             }
+            Map<String, String> o = new HashMap<>();
+            Path cfgFile = findConfigFile(cli.get("config"));
+            if (cfgFile != null) {
+                java.util.Properties props = new java.util.Properties();
+                try (java.io.Reader r = Files.newBufferedReader(cfgFile, StandardCharsets.UTF_8)) {
+                    props.load(r);
+                } catch (IOException e) {
+                    throw new IllegalArgumentException("cannot read config file " + cfgFile + ": " + e.getMessage(), e);
+                }
+                props.forEach((k, v) -> o.put(String.valueOf(k).trim(), String.valueOf(v).trim()));
+                log("config file: " + cfgFile.toAbsolutePath());
+            }
+            o.putAll(cli);
             String[] shard = o.getOrDefault("shard", "0/1").split("/");
             return new Config(o.getOrDefault("devices", env("LT_DEVICES", "devices.json")), o.get("model"),
-                    o.getOrDefault("broker", env("IOT_BROKER_URL", "mqtt://localhost:1883")),
+                    o.containsKey("broker") ? o.get("broker") : env("IOT_BROKER_URL", null),
                     Integer.parseInt(o.getOrDefault("qos", "1")), Integer.parseInt(o.getOrDefault("limit", "0")),
                     Integer.parseInt(o.getOrDefault("offset", "0")), Integer.parseInt(shard[0]),
                     Integer.parseInt(shard[1]), Double.parseDouble(o.getOrDefault("rate", "1")),
                     Integer.parseInt(o.getOrDefault("duration", "0")), Integer.parseInt(o.getOrDefault("ramp", "200")),
                     !"random".equals(o.get("value-mode")), o.get("csv"),
                     Integer.parseInt(o.getOrDefault("report", "5")));
+        }
+
+        private static Path findConfigFile(String explicit) {
+            if (explicit != null) {
+                Path p = Path.of(explicit);
+                if (!Files.exists(p)) {
+                    throw new IllegalArgumentException("config file not found: " + p.toAbsolutePath());
+                }
+                return p;
+            }
+            String fromEnv = env("LT_CONFIG", null);
+            for (String c : new String[] { fromEnv, "loadtest.properties", "backend/loadtest.properties" }) {
+                if (c != null && Files.exists(Path.of(c))) {
+                    return Path.of(c);
+                }
+            }
+            return null;
         }
 
         void validate() {
@@ -83,7 +118,7 @@ public final class MqttLoadRunner {
         }
     }
 
-    record Device(int no, String productKey, String deviceKey, String secret) {
+    record Device(int no, String productKey, String deviceKey, String secret, String brokerUrl) {
         String clientId() {
             return productKey + "." + deviceKey;
         }
@@ -123,7 +158,8 @@ public final class MqttLoadRunner {
             if (pk.isEmpty() || dk.isEmpty() || secret.isEmpty()) {
                 throw new IOException("device #" + n + " lacks productKey / deviceKey / deviceSecret");
             }
-            all.add(new Device(n, pk, dk, secret));
+            String bu = r.hasNonNull("brokerUrl") ? r.get("brokerUrl").asText() : null;
+            all.add(new Device(n, pk, dk, secret, bu));
         }
         List<Device> out = new ArrayList<>();
         for (Device d : all) {
@@ -210,6 +246,13 @@ public final class MqttLoadRunner {
         final LongAdder errors = new LongAdder();
         final LongAdder reconnects = new LongAdder();
         final AtomicInteger connected = new AtomicInteger();
+        /** clients created so far; started - connected = still connecting (or retrying in the background) */
+        final AtomicInteger started = new AtomicInteger();
+        /** connect attempts that failed before a connection was ever established (client retries them) */
+        final LongAdder connFail = new LongAdder();
+        /** established connections that were lost later */
+        final LongAdder lost = new LongAdder();
+        final java.util.concurrent.ConcurrentHashMap<String, LongAdder> causes = new java.util.concurrent.ConcurrentHashMap<>();
         final AtomicLong latSum = new AtomicLong();
         final AtomicLong latN = new AtomicLong();
         final long[] lats = new long[50_000];
@@ -218,6 +261,17 @@ public final class MqttLoadRunner {
         long totalAcked;
         long totalFailed;
         int peakConnected;
+
+        void cause(Throwable t) {
+            String key = t == null ? "unknown" : t.getClass().getSimpleName() + ": "
+                    + (t.getMessage() == null ? "" : t.getMessage().replaceAll("\\s+", " "));
+            if (key.length() > 110) {
+                key = key.substring(0, 110);
+            }
+            if (causes.size() < 30 || causes.containsKey(key)) {
+                causes.computeIfAbsent(key, k -> new LongAdder()).increment();
+            }
+        }
 
         void latency(long ms) {
             latSum.addAndGet(ms);
@@ -248,11 +302,12 @@ public final class MqttLoadRunner {
             System.err.println("no devices to run (check --devices / --limit / --offset / --shard)");
             System.exit(1);
         }
-        URI uri = URI.create(c.broker());
+        String broker = resolveBroker(c, devices);
+        URI uri = URI.create(broker);
         String host = uri.getHost();
         int port = uri.getPort() > 0 ? uri.getPort() : 1883;
         double intervalMs = 1000.0 / c.rate();
-        log(devices.size() + " devices from " + c.devicesFile() + " -> " + c.broker() + ", " + c.rate()
+        log(devices.size() + " devices from " + c.devicesFile() + " -> " + broker + ", " + c.rate()
                 + " msg/s per device = " + Math.round(devices.size() * c.rate()) + " msg/s total, qos " + c.qos()
                 + ", ramp " + c.ramp() + "/s, properties " + props.stream().map(Prop::identifier).toList());
 
@@ -326,6 +381,19 @@ public final class MqttLoadRunner {
         Thread.currentThread().join();
     }
 
+    /** Broker precedence: --broker / config file / IOT_BROKER_URL, then the brokerUrl stored in the device file. */
+    static String resolveBroker(Config c, List<Device> devices) {
+        if (c.broker() != null && !c.broker().isBlank()) {
+            return c.broker();
+        }
+        for (Device d : devices) {
+            if (d.brokerUrl() != null && !d.brokerUrl().isBlank() && !d.brokerUrl().contains("<")) {
+                return d.brokerUrl();
+            }
+        }
+        return "mqtt://localhost:1883";
+    }
+
     private static Mqtt3AsyncClient startDevice(Device dev, List<Prop> props, Config c, String host, int port,
             MqttQos qos, double intervalMs, Stats st, ScheduledExecutorService scheduler, AtomicBoolean stopping) {
         String clientId = dev.clientId();
@@ -345,10 +413,21 @@ public final class MqttLoadRunner {
                         }
                     }
                 }).addDisconnectedListener(ctx -> {
-                    if (up.compareAndSet(true, false)) {
+                    boolean wasUp = up.compareAndSet(true, false);
+                    if (wasUp) {
                         st.connected.decrementAndGet();
                     }
+                    // the client retries failed connects on its own, so they must be counted here or they stay invisible
+                    if (ctx.getSource() != com.hivemq.client.mqtt.lifecycle.MqttDisconnectSource.USER) {
+                        if (wasUp) {
+                            st.lost.increment();
+                        } else {
+                            st.connFail.increment();
+                        }
+                        st.cause(ctx.getCause());
+                    }
                 }).buildAsync();
+        st.started.incrementAndGet();
 
         client.connectWith().keepAlive(30).cleanSession(true).simpleAuth().username(clientId)
                 .password(dev.secret().getBytes(StandardCharsets.UTF_8)).applySimpleAuth().willPublish()
@@ -417,9 +496,14 @@ public final class MqttLoadRunner {
         st.totalFailed += failed;
         double secs = c.reportSeconds();
         long avg = n == 0 ? 0 : sum / n;
-        log(String.format("connected=%d/%d sent=%.0f/s acked=%.0f/s failed=%d ackAvg=%dms ackP95=%dms authFail=%d errors=%d reconnects=%d",
-                st.connected.get(), total, sent / secs, acked / secs, failed, avg, p95, st.authFail.sum(),
-                st.errors.sum(), st.reconnects.sum()));
+        int connected = st.connected.get();
+        log(String.format("connected=%d/%d pending=%d sent=%.0f/s acked=%.0f/s failed=%d ackAvg=%dms ackP95=%dms authFail=%d errors=%d connFail=%d lost=%d reconnects=%d",
+                connected, total, Math.max(0, st.started.get() - connected), sent / secs, acked / secs, failed, avg, p95,
+                st.authFail.sum(), st.errors.sum(), st.connFail.sum(), st.lost.sum(), st.reconnects.sum()));
+        if (!st.causes.isEmpty()) {
+            st.causes.entrySet().stream().sorted((a, b) -> Long.compare(b.getValue().sum(), a.getValue().sum())).limit(3)
+                    .forEach(e -> log("   connect problem x" + e.getValue().sum() + ": " + e.getKey()));
+        }
         if (csv != null) {
             try {
                 Files.writeString(csv, String.format("%s,%d,%.1f,%.1f,%d,%d,%d,%d,%d,%d%n", Instant.now(),

@@ -23,7 +23,10 @@
 
 换成别的产品：用 `--model 文件` 指定物模型 JSON（完整物模型对象，或只含属性的数组）。**产品的物模型里必须有这些属性**，否则平台会拒绝未定义的属性（设备“通信记录”里标 `INVALID`）。
 
-## 3. 运行
+## 3. 配置文件（推荐）
+把 `backend/loadtest.properties.example` 复制为 `backend/loadtest.properties`（已被 git 忽略，可以放你的内网地址），填好 Broker、设备文件、速率等；之后运行不用再带参数。键名就是命令行选项去掉 `--`，**命令行参数优先于文件**。查找顺序：`--config 文件`、环境变量 `LT_CONFIG`、`./loadtest.properties`、`./backend/loadtest.properties`。Broker 没配时，使用设备 JSON 里每个设备自带的 `brokerUrl`（含 `<` 的占位地址会被忽略）。
+
+## 4. 运行
 命令行（Windows）：
 ```powershell
 .\scripts\loadtest.ps1 --devices D:\tmp\devices-LT.json --broker mqtt://<host>:1883 --rate 1 --duration 300
@@ -36,7 +39,7 @@ IDEA：运行 `MqttLoadRunner`，在 Program arguments 填：
 ```
 设备文件默认读运行目录下的 `devices.json`（或环境变量 `LT_DEVICES`），不想每次传参可以放一份在那里。
 
-## 参数
+## 参数（均可写进配置文件）
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `--devices` | `devices.json`（或 `LT_DEVICES`） | 设备 JSON 文件 |
@@ -52,9 +55,19 @@ IDEA：运行 `MqttLoadRunner`，在 Program arguments 填：
 | `--report S` | `5` | 统计输出间隔（秒），每秒输出用 `--report 1` |
 | `--csv 文件` | 无 | 每个统计间隔追加一行，便于画图对比 |
 
+## 要让一万个设备同时在线
+一万连接对 EMQX 本身是很轻的负载，卡住通常是别处的限制。每个设备连接一次，EMQX 会回调后端约 3 次（连接认证 1 次 + 首次发布 `status`、`property/post` 两个主题各 1 次授权）。按先后查：
+
+1. **看压测输出里的连接统计**：`pending` = 已发起但没连上的数量，`connFail`/`lost` = 连接失败/丢失次数，下面会打印最多的 3 种原因（`connect problem xN: …`）。原因是 `Connection refused / timed out` 偏向服务端或网络，`Cannot assign requested address / Address already in use` 是**压测机端口用完**，`NOT_AUTHORIZED` 是认证被拒。
+2. **压测机端口**：Windows 默认只有 16384 个临时端口（`netsh int ipv4 show dynamicport tcp`），关闭的连接还要 TIME_WAIT 约 2 分钟。连续压测、上一轮刚停，端口就会被占。两轮之间等 2～4 分钟，或（管理员）`netsh int ipv4 set dynamicport tcp start=10000 num=55000` 后重启压测；更大规模用多台压测机。
+3. **EMQX 回调**：HTTP 源连接池（你截图 8）调到 32～64，请求超时 5～10 秒，开授权缓存；连接速率 `--ramp` 从 50 起步（一万个需要约 200 秒）。EMQX 日志里 authn/authz 超时说明回调跟不上。
+4. **EMQX 所在虚拟机**：`ulimit -n` ≥ 连接数×2、内存 ≥ 4GB（见 `docs/tuning.md`）。
+5. **对比实验**：在 EMQX 里临时把认证/授权换成内置的（或临时允许匿名，仅限内网测试），再跑一次。能到 10000 说明瓶颈在回调；仍然到不了，说明是 EMQX/系统/网络限制。
+6. **看 EMQX Dashboard 的连接数**，和压测输出的 `connected` 对比：一致说明 EMQX 就只收到了这么多；Dashboard 更多说明是压测端统计问题。
+
 ## 输出
 ```
-[load] connected=1000/1000 sent=1000/s acked=998/s failed=0 ackAvg=4ms ackP95=11ms authFail=0 errors=0 reconnects=0
+[load] connected=1000/1000 pending=0 sent=1000/s acked=998/s failed=0 ackAvg=4ms ackP95=11ms authFail=0 errors=0 connFail=0 lost=0 reconnects=0
 ```
 - `sent` / `acked`：发出 / 收到 Broker 确认（QoS1 的 PUBACK）的速率。两者长期差距大说明 Broker 或网络吃不下。
 - `ackAvg` / `ackP95`：发布到 PUBACK 的耗时，**只到 EMQX 为止**，不含后端处理。后端处理速度看平台“数据总览”的 TPS 卡片或后端日志里的 `[ingest]` 行。

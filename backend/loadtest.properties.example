@@ -1,0 +1,34 @@
+# Copy this file to backend/loadtest.properties (git-ignored) and edit. Keys are the command-line options without "--";
+# options given on the command line override the file. The file is found via --config, env LT_CONFIG,
+# ./loadtest.properties or ./backend/loadtest.properties.
+
+# EMQX address. If omitted, the "brokerUrl" stored in the exported device file is used.
+broker=mqtt://<host>:1883
+
+# The JSON exported by "batch create devices"
+devices=D:/tmp/devices-LT.json
+
+# messages per device per second (0.2 = one message every 5 s)
+rate=1
+
+# new connections per second while connecting: keep it low (each connection costs the broker an auth + ACL callback)
+ramp=50
+
+# 0 = run until stopped
+duration=0
+
+# statistics every N seconds
+report=1
+
+# 0 or 1
+qos=1
+
+# optional: only the first N devices / skip the first N
+#limit=1000
+#offset=0
+
+# optional: thing model JSON used to build the payloads (default: built-in demo model)
+#model=D:/tmp/thing-model.json
+
+# optional: append statistics to a CSV
+#csv=D:/tmp/loadtest.csv
