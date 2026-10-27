@@ -38,10 +38,12 @@ public class UplinkProcessor {
     private final CommandService commands;
     private final MessageLogger messageLogger;
     private final DedupCache dedup;
+    private final IngestStats stats;
 
     // @Lazy breaks the cycle CommandService -> DownlinkPublisher (gateway) -> UplinkProcessor -> CommandService
     public UplinkProcessor(DeviceRuntime runtime, TelemetryService telemetry, @Lazy CommandService commands,
-            MessageLogger messageLogger, IotProperties props) {
+            MessageLogger messageLogger, IotProperties props, IngestStats stats) {
+        this.stats = stats;
         this.runtime = runtime;
         this.telemetry = telemetry;
         this.commands = commands;
@@ -50,6 +52,12 @@ public class UplinkProcessor {
     }
 
     public void handle(String topic, byte[] payload) {
+        handle(topic, payload, System.currentTimeMillis());
+    }
+
+    /** @param receivedAt when the platform first saw the message (MQTT arrival); used for the queue-delay statistic */
+    public void handle(String topic, byte[] payload, long receivedAt) {
+        stats.record(System.currentTimeMillis() - receivedAt);
         try {
             doHandle(topic, payload);
         } catch (Exception e) {

@@ -120,6 +120,12 @@
       <version>${moquette.version}</version>
     </dependency>
 
+    <!-- Optional ingest path: device uplink via Kafka (iot.ingest.mode=kafka). Inactive unless enabled. -->
+    <dependency>
+      <groupId>org.springframework.kafka</groupId>
+      <artifactId>spring-kafka</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>

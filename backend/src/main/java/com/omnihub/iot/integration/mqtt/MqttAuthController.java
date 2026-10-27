@@ -24,6 +24,8 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api/mqtt")
 public class MqttAuthController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MqttAuthController.class);
+
     public record AuthRequest(String clientid, String username, String password) {
     }
 
@@ -79,6 +81,8 @@ public class MqttAuthController {
         String expected = props.getMqtt().getHttpAuthToken();
         if (expected.isEmpty() || token == null || !MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8),
                 expected.getBytes(StandardCharsets.UTF_8))) {
+            log.warn("Broker hook rejected: header X-Broker-Token is {} (must equal iot.mqtt.http-auth-token)",
+                    expected.isEmpty() ? "irrelevant, server token is not configured" : token == null ? "missing" : "wrong");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
         }
     }

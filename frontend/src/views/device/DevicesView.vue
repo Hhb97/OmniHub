@@ -47,6 +47,7 @@
         <el-button type="primary" @click="search">查询</el-button>
         <el-button @click="reset">重置</el-button>
         <div class="spacer" />
+        <el-button v-permission="'device:create'" @click="batchDialog = true">批量新增</el-button>
         <el-button v-permission="'device:create'" type="primary" @click="openCreate"
           >新建设备</el-button
         >
@@ -126,6 +127,7 @@
     </el-card>
 
     <DeviceFormDialog v-model="dialog" :device="editing" @saved="onSaved" />
+    <BatchDeviceDialog v-model="batchDialog" @done="load" />
     <SecretDialog
       v-model="secretDialog"
       :device="secretDevice"
@@ -149,6 +151,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Device, DeviceCreated, DeviceQuery } from '@/types'
 import { ONLINE_STATUS_LABEL } from '@/utils/constants'
 import { formatTime } from '@/utils/format'
+import BatchDeviceDialog from './BatchDeviceDialog.vue'
 import DeviceFormDialog from './DeviceFormDialog.vue'
 import SecretDialog from './SecretDialog.vue'
 
@@ -194,6 +197,8 @@ watch(secretDialog, (v) => {
 onMounted(() => {
   if (route.query.create) openCreate()
 })
+
+const batchDialog = ref(false)
 
 function openCreate() {
   editing.value = null

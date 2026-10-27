@@ -15,6 +15,7 @@ public class IotProperties {
     private Mqtt mqtt = new Mqtt();
     private Device device = new Device();
     private History history = new History();
+    private Ingest ingest = new Ingest();
     private Influxdb influxdb = new Influxdb();
     private EmbeddedPostgres embeddedPostgres = new EmbeddedPostgres();
 
@@ -51,6 +52,25 @@ public class IotProperties {
     public static class Device {
         private int offlineSweepSeconds = 15;
         private int dedupCacheSize = 20000;
+    }
+
+    @Data
+    public static class Ingest {
+        /** direct: MQTT message is processed in-process. kafka: gateway forwards it to Kafka, a consumer processes it. */
+        private String mode = "direct";
+        private Kafka kafka = new Kafka();
+    }
+
+    @Data
+    public static class Kafka {
+        private String topic = "iot-uplink";
+        private String groupId = "iot-platform";
+        /** consumer threads; useful up to the partition count */
+        private int concurrency = 8;
+        /** create the topic on startup if it does not exist */
+        private boolean createTopic = true;
+        private int partitions = 8;
+        private short replicas = 1;
     }
 
     @Data

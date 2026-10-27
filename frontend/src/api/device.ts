@@ -36,6 +36,12 @@ export const deviceApi = {
   list: (params: PageQuery & DeviceQuery) => http.get<PageResult<Device>>('/devices', params),
   get: (id: number) => http.get<Device>(`/devices/${id}`),
   create: (body: DeviceCreateRequest) => http.post<DeviceCreated>('/devices', body),
+  batchCreate: (body: {
+    productId: number
+    namePrefix: string
+    count: number
+    description?: string
+  }) => http.post<DeviceCreated[]>('/devices/batch', body),
   update: (id: number, body: DeviceUpdateRequest) => http.put<Device>(`/devices/${id}`, body),
   remove: (id: number) => http.delete<void>(`/devices/${id}`),
   rotateSecret: (id: number) => http.post<{ secret: string }>(`/devices/${id}/rotate-secret`),

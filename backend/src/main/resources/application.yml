@@ -26,6 +26,22 @@ spring:
     resources:
       add-mappings: false
 
+  kafka:
+    bootstrap-servers: ${IOT_KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      acks: ${IOT_KAFKA_ACKS:1}
+      compression-type: lz4
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        linger.ms: 5
+        max.block.ms: 3000
+    consumer:
+      auto-offset-reset: latest
+      max-poll-records: 500
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
 mybatis-plus:
   global-config:
     banner: false
@@ -72,6 +88,16 @@ iot:
       enabled: false
       host: 0.0.0.0
       port: 1883
+  ingest:
+    # direct (default): MQTT -> in-process lanes -> processing.  kafka: MQTT -> Kafka -> consumer -> processing.
+    mode: ${IOT_INGEST_MODE:direct}
+    kafka:
+      topic: ${IOT_KAFKA_TOPIC:iot-uplink}
+      group-id: ${IOT_KAFKA_GROUP:iot-platform}
+      concurrency: ${IOT_KAFKA_CONCURRENCY:8}
+      create-topic: ${IOT_KAFKA_CREATE_TOPIC:true}
+      partitions: ${IOT_KAFKA_PARTITIONS:8}
+      replicas: ${IOT_KAFKA_REPLICAS:1}
   device:
     offline-sweep-seconds: 15
     dedup-cache-size: 20000

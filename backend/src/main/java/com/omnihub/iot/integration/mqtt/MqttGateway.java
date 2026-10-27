@@ -35,6 +35,7 @@ public class MqttGateway implements DownlinkPublisher {
 
     private final IotProperties props;
     private final UplinkProcessor processor;
+    private final org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder;
     private final ThreadPoolExecutor[] lanes = new ThreadPoolExecutor[LANES];
     private final ScheduledExecutorService connector = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "mqtt-connector");
@@ -43,7 +44,9 @@ public class MqttGateway implements DownlinkPublisher {
     });
     private volatile MqttClient client;
 
-    public MqttGateway(IotProperties props, UplinkProcessor processor) {
+    public MqttGateway(IotProperties props, UplinkProcessor processor,
+            org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder) {
+        this.forwarder = forwarder;
         this.props = props;
         this.processor = processor;
         for (int i = 0; i < LANES; i++) {
@@ -154,7 +157,14 @@ public class MqttGateway implements DownlinkPublisher {
         @Override
         public void messageArrived(String topic, MqttMessage message) {
             int lane = Math.floorMod(laneKey(topic), LANES);
-            lanes[lane].execute(() -> processor.handle(topic, message.getPayload()));
+            long arrived = System.currentTimeMillis();
+            KafkaUplinkForwarder f = forwarder.getIfAvailable();
+            if (f != null) {
+                // kafka mode: the platform's consumer will process it; this thread only hands it to Kafka
+                f.forward(topic, message.getPayload(), arrived);
+                return;
+            }
+            lanes[lane].execute(() -> processor.handle(topic, message.getPayload(), arrived));
         }
 
         @Override

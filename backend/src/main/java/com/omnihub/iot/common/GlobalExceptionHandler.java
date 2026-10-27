@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -77,6 +78,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<Object>> method(HttpRequestMethodNotSupportedException e) {
         return resp(HttpStatus.METHOD_NOT_ALLOWED, "不支持的请求方法", null);
+    }
+
+    /** Keeps the status chosen by ResponseStatusException (e.g. 401 from the broker auth hooks) instead of a 500. */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Object>> status(ResponseStatusException e) {
+        HttpStatus st = HttpStatus.resolve(e.getStatusCode().value());
+        return resp(st == null ? HttpStatus.INTERNAL_SERVER_ERROR : st, st == null ? "服务器内部错误" : st.getReasonPhrase(),
+                null);
     }
 
     @ExceptionHandler(Exception.class)

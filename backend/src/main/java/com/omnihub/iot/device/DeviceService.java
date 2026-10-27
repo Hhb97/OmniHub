@@ -106,6 +106,39 @@ public class DeviceService {
         return toVOs(List.of(d)).get(0).withSecret(secret);
     }
 
+    /** All-or-nothing: one transaction. Secrets are returned once, in the response only. */
+    @Transactional
+    public List<DeviceVO> batchCreate(DeviceRequest.Batch req) {
+        Product product = productService.require(req.productId());
+        if (!"ENABLED".equals(product.getStatus())) {
+            throw BizException.conflict("产品已停用，不能新增设备");
+        }
+        int width = Math.max(3, String.valueOf(req.count()).length());
+        List<DeviceVO> out = new java.util.ArrayList<>();
+        for (int i = 1; i <= req.count(); i++) {
+            String key;
+            do {
+                key = DeviceCredentials.newDeviceKey();
+            } while (mapper.selectCount(new LambdaQueryWrapper<Device>().eq(Device::getProductId, product.getId())
+                    .eq(Device::getDeviceKey, key)) > 0);
+            String secret = DeviceCredentials.newSecret();
+            Device d = new Device();
+            d.setTenantId(CurrentUser.tenantId());
+            d.setProductId(product.getId());
+            d.setName(req.namePrefix().trim() + "-" + String.format("%0" + width + "d", i));
+            d.setDeviceKey(key);
+            d.setDescription(req.description());
+            d.setSecretSalt(DeviceCredentials.newSalt());
+            d.setSecretHash(DeviceCredentials.hash(d.getSecretSalt(), secret));
+            d.setEnabled(true);
+            d.setMqttConnected(false);
+            d.setOnlineStatus("INACTIVE");
+            mapper.insert(d);
+            out.add(toVOs(List.of(d)).get(0).withSecret(secret));
+        }
+        return out;
+    }
+
     public DeviceVO update(Long id, DeviceRequest req) {
         Device d = require(id);
         d.setName(req.name());

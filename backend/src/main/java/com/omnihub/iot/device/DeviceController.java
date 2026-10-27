@@ -55,6 +55,13 @@ public class DeviceController {
         return ApiResponse.ok(service.create(req));
     }
 
+    @PostMapping("/devices/batch")
+    @PreAuthorize("hasAuthority('device:create')")
+    @OpLog(module = "设备", action = "批量新增设备")
+    public ApiResponse<java.util.List<DeviceVO>> batchCreate(@Valid @RequestBody DeviceRequest.Batch req) {
+        return ApiResponse.ok(service.batchCreate(req));
+    }
+
     @PutMapping("/devices/{id}")
     @PreAuthorize("hasAuthority('device:update')")
     @OpLog(module = "设备", action = "编辑设备")
