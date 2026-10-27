@@ -1,0 +1,97 @@
+# Production-style stack: PostgreSQL + EMQX + backend + frontend (nginx).
+# Usage: cp .env.example .env && edit .env && docker compose up -d --build
+#
+# NOTE: this file was written but NOT run in the environment where the project was developed (no Docker there).
+# The EMQX authn/authz settings in particular are untested; see docs/troubleshooting.md.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iot}
+      POSTGRES_USER: ${POSTGRES_USER:-iot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iot} -d ${POSTGRES_DB:-iot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  emqx:
+    image: emqx/emqx:5.8.0
+    environment:
+      EMQX_ALLOW_ANONYMOUS: "false"
+      # device authentication is delegated to the platform backend
+      EMQX_AUTHENTICATION__1__MECHANISM: password_based
+      EMQX_AUTHENTICATION__1__BACKEND: http
+      EMQX_AUTHENTICATION__1__METHOD: post
+      EMQX_AUTHENTICATION__1__URL: http://backend:8080/api/mqtt/auth
+      EMQX_AUTHENTICATION__1__HEADERS__content-type: application/json
+      EMQX_AUTHENTICATION__1__HEADERS__x-broker-token: ${IOT_MQTT_HTTP_AUTH_TOKEN:?set IOT_MQTT_HTTP_AUTH_TOKEN in .env}
+      EMQX_AUTHENTICATION__1__BODY__clientid: "$${clientid}"
+      EMQX_AUTHENTICATION__1__BODY__username: "$${username}"
+      EMQX_AUTHENTICATION__1__BODY__password: "$${password}"
+      # topic ACL, also delegated to the backend
+      EMQX_AUTHORIZATION__NO_MATCH: deny
+      EMQX_AUTHORIZATION__SOURCES__1__TYPE: http
+      EMQX_AUTHORIZATION__SOURCES__1__ENABLE: "true"
+      EMQX_AUTHORIZATION__SOURCES__1__METHOD: post
+      EMQX_AUTHORIZATION__SOURCES__1__URL: http://backend:8080/api/mqtt/acl
+      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__content-type: application/json
+      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__x-broker-token: ${IOT_MQTT_HTTP_AUTH_TOKEN}
+      EMQX_AUTHORIZATION__SOURCES__1__BODY__clientid: "$${clientid}"
+      EMQX_AUTHORIZATION__SOURCES__1__BODY__username: "$${username}"
+      EMQX_AUTHORIZATION__SOURCES__1__BODY__topic: "$${topic}"
+      EMQX_AUTHORIZATION__SOURCES__1__BODY__action: "$${action}"
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - emqxdata:/opt/emqx/data
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/backend.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_started
+    environment:
+      IOT_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-iot}?stringtype=unspecified
+      IOT_DB_USER: ${POSTGRES_USER:-iot}
+      IOT_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      IOT_JWT_SECRET: ${IOT_JWT_SECRET:?set IOT_JWT_SECRET in .env}
+      IOT_ADMIN_USERNAME: ${IOT_ADMIN_USERNAME:-admin}
+      IOT_ADMIN_PASSWORD: ${IOT_ADMIN_PASSWORD:?set IOT_ADMIN_PASSWORD in .env}
+      IOT_MQTT_BROKER_URL: tcp://emqx:1883
+      IOT_MQTT_USERNAME: ${IOT_MQTT_USERNAME:-platform}
+      IOT_MQTT_PASSWORD: ${IOT_MQTT_PASSWORD:?set IOT_MQTT_PASSWORD in .env}
+      IOT_MQTT_HTTP_AUTH_TOKEN: ${IOT_MQTT_HTTP_AUTH_TOKEN}
+      IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
+      IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
+      IOT_API_DOCS_ENABLED: ${IOT_API_DOCS_ENABLED:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-80}:80"
+
+volumes:
+  pgdata:
+  emqxdata:

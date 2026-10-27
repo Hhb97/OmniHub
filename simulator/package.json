@@ -1,0 +1,17 @@
+{
+  "name": "iot-device-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone MQTT device simulator for the IoT platform",
+  "type": "module",
+  "scripts": {
+    "start": "node src/simulator.js",
+    "provision": "node src/provision.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  }
+}

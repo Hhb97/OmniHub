@@ -1,0 +1,23 @@
+# Integration test profile: throw-away embedded PostgreSQL + embedded MQTT broker on dedicated ports.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:${iot.embedded-postgres.port}/iot?stringtype=unspecified
+
+iot:
+  security:
+    jwt-secret: test-only-jwt-secret-0123456789-0123456789
+  admin:
+    initial-password: Test-Admin-Pass-1
+  mqtt:
+    broker-url: tcp://localhost:18830
+    platform-password: test-platform-mqtt-password
+    client-id: iot-platform-test
+    embedded-broker:
+      enabled: true
+      port: 18830
+  embedded-postgres:
+    enabled: true
+    port: 15439
+    data-dir: target/pgdata-test
+  device:
+    offline-sweep-seconds: 1

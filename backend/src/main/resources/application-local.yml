@@ -1,0 +1,31 @@
+# Local development profile: embedded PostgreSQL + embedded MQTT broker, so nothing else has to be installed.
+# NEVER use this profile in production (fixed dev credentials, Swagger enabled).
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:${iot.embedded-postgres.port}/iot?stringtype=unspecified
+    username: iot
+    password: iot-local-dev
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+iot:
+  security:
+    jwt-secret: local-dev-only-jwt-secret-change-me-0123456789abcdef
+  admin:
+    initial-password: ${IOT_ADMIN_PASSWORD:Admin@123456}
+  cors-allowed-origins: http://localhost:5173
+  dashboard-zone: Asia/Shanghai
+  mqtt:
+    platform-password: local-dev-platform-mqtt-password
+    embedded-broker:
+      enabled: true
+  embedded-postgres:
+    enabled: true
+
+logging:
+  level:
+    com.omnihub: DEBUG

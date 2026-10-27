@@ -1,0 +1,11 @@
+{
+  "brokerUrl": "mqtt://localhost:1883",
+  "productKey": "demo-sensor",
+  "deviceKey": "sim-001",
+  "deviceSecret": "<paste the secret shown once when the device was created>",
+  "reportIntervalSeconds": 5,
+  "commandExecutionDelayMs": 800,
+  "initial": { "temperature": 24, "humidity": 55, "voltage": 220, "power": 1200, "switch": true, "targetTemp": 22 },
+  "spike": { "everySeconds": 0, "temperature": 85, "durationReports": 3 },
+  "offlineCycle": { "afterSeconds": 0, "durationSeconds": 0 }
+}
