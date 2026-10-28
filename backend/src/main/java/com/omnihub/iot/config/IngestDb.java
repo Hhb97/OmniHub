@@ -2,6 +2,7 @@ package com.omnihub.iot.config;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -28,7 +29,7 @@ public class IngestDb {
     private final JdbcTemplate jdbc;
     private final HikariDataSource pool;
 
-    public IngestDb(DataSource primary, IotProperties props) {
+    public IngestDb(DataSource primary, IotProperties props, MeterRegistry meters) {
         int size = props.getIngest().getDbPool();
         if (size > 0 && primary instanceof HikariDataSource hikari && hikari.getJdbcUrl() != null) {
             HikariConfig cfg = new HikariConfig();
@@ -42,6 +43,8 @@ public class IngestDb {
             // instead of blocking a lane for Hikari's default 30 seconds
             cfg.setConnectionTimeout(props.getIngest().getDbTimeoutMs());
             cfg.setInitializationFailTimeout(-1); // the first connection is taken on demand
+            // without this the second pool would be invisible: no pending/timeout metrics during a load test
+            cfg.setMetricRegistry(meters);
             this.pool = new HikariDataSource(cfg);
             this.jdbc = new JdbcTemplate(pool);
             log.info("Ingestion writes use their own pool '{}' with {} connections (main pool is left to HTTP)",
