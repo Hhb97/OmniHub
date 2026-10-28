@@ -79,9 +79,10 @@ public class MqttAuthController {
         }
         DeviceRuntime.AuthResult r = runtime.check(req.clientid(), req.username(), req.password());
         boolean ok = r == DeviceRuntime.AuthResult.ALLOW;
-        // never the password itself: its length is enough to tell "empty / truncated" from "wrong"
+        // never the user name or the password themselves: their lengths are enough to tell "empty" from "wrong"
         count("auth", ok, ok ? "device" : r.reason(), "clientid=" + req.clientid() + " usernameEqualsClientid="
-                + (req.clientid() != null && req.clientid().equals(req.username())) + " passwordLength="
+                + (req.clientid() != null && req.clientid().equals(req.username())) + " usernameLength="
+                + (req.username() == null ? -1 : req.username().length()) + " passwordLength="
                 + (req.password() == null ? -1 : req.password().length()));
         return Map.of("result", ok ? "allow" : "deny");
     }
