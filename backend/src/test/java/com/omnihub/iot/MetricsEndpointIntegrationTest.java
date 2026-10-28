@@ -95,9 +95,9 @@ class MetricsEndpointIntegrationTest {
         String body = r.getBody();
         assertThat(body).contains("iot_ingest_processed_total")
                 .contains("iot_ingest_delay_ms_bucket")
-                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"latest\"}")
-                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"history\"}")
-                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"message-log\"}")
+                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"latest\",shard=\"0\"}")
+                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"history\",shard=\"0\"}")
+                .contains("iot_batch_queue_pending{application=\"iot-backend\",queue=\"message-log\",shard=\"0\"}")
                 .contains("iot_batch_queue_dropped_total")
                 .contains("iot_batch_flush_seconds_bucket")
                 .contains("iot_lane_queue_pending")

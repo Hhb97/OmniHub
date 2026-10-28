@@ -1,6 +1,6 @@
 package com.omnihub.iot.telemetry;
 
-import com.omnihub.iot.common.BatchQueue;
+import com.omnihub.iot.common.ShardedBatchQueue;
 import com.omnihub.iot.common.SensitiveMasker;
 import com.omnihub.iot.config.IotProperties;
 import jakarta.annotation.PreDestroy;
@@ -28,13 +28,14 @@ public class MessageLogger {
 
     private final JdbcTemplate jdbc;
     private final boolean logOkProperty;
-    private final BatchQueue<Row> queue;
+    private final ShardedBatchQueue<Row> queue;
 
     public MessageLogger(JdbcTemplate jdbc, IotProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
         this.jdbc = jdbc;
         IotProperties.Batch b = props.getIngest().getBatch();
         this.logOkProperty = b.isLogOkProperty();
-        this.queue = new BatchQueue<>("message-log", b.getQueueCapacity(), b.getMaxBatch(), 100, this::write).bind(meters);
+        this.queue = new ShardedBatchQueue<Row>("message-log", b.getLogWorkers(), b.getQueueCapacity(), b.getMaxBatch(),
+                100, r -> r.deviceId() == null ? 0L : r.deviceId(), this::write).bind(meters);
     }
 
     public void log(Long deviceId, String direction, String type, String topic, String payload, String result,

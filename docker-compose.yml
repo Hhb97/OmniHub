@@ -148,6 +148,9 @@ services:
       IOT_KAFKA_ACKS: ${IOT_KAFKA_ACKS:-1}
       IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN:?set IOT_METRICS_TOKEN in .env}
       IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-true}
+      IOT_BATCH_WORKERS: ${IOT_BATCH_WORKERS:-4}
+      IOT_BATCH_HISTORY_WORKERS: ${IOT_BATCH_HISTORY_WORKERS:-2}
+      IOT_BATCH_LOG_WORKERS: ${IOT_BATCH_LOG_WORKERS:-2}
       JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--XX:MaxRAMPercentage=70}
     healthcheck:
       test: ["CMD-SHELL", "(curl -sf http://localhost:8080/actuator/health || wget -qO- http://localhost:8080/actuator/health) | grep -q UP"]

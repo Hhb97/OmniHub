@@ -1,7 +1,7 @@
 package com.omnihub.iot.telemetry;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.omnihub.iot.common.BatchQueue;
+import com.omnihub.iot.common.ShardedBatchQueue;
 import com.omnihub.iot.common.BizException;
 import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.common.PageResult;
@@ -80,17 +80,18 @@ public class TelemetryService {
     private final HistoryStore history;
     /** latest values (PostgreSQL) and history (PostgreSQL or InfluxDB) have their own queue and thread, so a slow
      *  history store never delays the latest values and vice versa */
-    private final BatchQueue<HistoryStore.Sample> latestWriter;
-    private final BatchQueue<HistoryStore.Sample> historyWriter;
+    private final ShardedBatchQueue<HistoryStore.Sample> latestWriter;
+    private final ShardedBatchQueue<HistoryStore.Sample> historyWriter;
 
     public TelemetryService(JdbcTemplate jdbc, ThingModelService thingModels, DeviceService deviceService,
             ConfigService config, ApplicationEventPublisher events, HistoryStore history, IotProperties props,
             io.micrometer.core.instrument.MeterRegistry meters) {
         this.history = history;
         IotProperties.Batch b = props.getIngest().getBatch();
-        this.latestWriter = new BatchQueue<>("latest", b.getQueueCapacity(), b.getMaxBatch(), 100, this::flushLatest).bind(meters);
-        this.historyWriter = new BatchQueue<>("history", b.getQueueCapacity(), b.getHistoryMaxBatch(), 100,
-                this::flushHistory).bind(meters);
+        this.latestWriter = new ShardedBatchQueue<HistoryStore.Sample>("latest", b.getWorkers(), b.getQueueCapacity(),
+                b.getMaxBatch(), 100, s -> s.deviceId(), this::flushLatest).bind(meters);
+        this.historyWriter = new ShardedBatchQueue<HistoryStore.Sample>("history", b.getHistoryWorkers(),
+                b.getQueueCapacity(), b.getHistoryMaxBatch(), 100, s -> s.deviceId(), this::flushHistory).bind(meters);
         this.jdbc = jdbc;
         this.thingModels = thingModels;
         this.deviceService = deviceService;

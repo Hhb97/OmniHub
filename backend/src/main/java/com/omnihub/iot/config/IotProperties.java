@@ -91,6 +91,13 @@ public class IotProperties {
         private int maxBatch = 2000;
         /** maximum samples per history write (InfluxDB likes 5000-10000 points per request) */
         private int historyMaxBatch = 5000;
+        /**
+         * parallel writer threads per queue. Items are spread by device id, so one device always goes to the same
+         * writer (its order is kept) and the writers update different rows. 1 = a single writer, as before.
+         */
+        private int workers = 4;
+        private int historyWorkers = 2;
+        private int logWorkers = 2;
         /** false = do not log successful property reports in the communication log (the dashboard trend needs them) */
         private boolean logOkProperty = true;
     }

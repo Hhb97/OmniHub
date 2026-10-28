@@ -59,7 +59,12 @@ public final class BatchQueue<T> implements AutoCloseable {
 
     /** Publishes this queue's metrics, tagged queue=<name>. */
     public BatchQueue<T> bind(MeterRegistry registry) {
-        Tags tags = Tags.of("queue", name);
+        return bind(registry, name, Tags.empty());
+    }
+
+    /** Same, for one shard of a {@link ShardedBatchQueue}: queue=<logical name> plus the shard tag. */
+    BatchQueue<T> bind(MeterRegistry registry, String queueTag, Tags extra) {
+        Tags tags = Tags.of("queue", queueTag).and(extra);
         Gauge.builder("iot_batch_queue_pending", queue, BlockingQueue::size)
                 .description("Items waiting to be written (the backlog)").tags(tags).register(registry);
         Gauge.builder("iot_batch_queue_capacity", this, q -> q.queue.size() + q.queue.remainingCapacity())

@@ -53,6 +53,19 @@
 - 监听器的**最大连接数**、**acceptors**、**连接速率限制**（EMQX 5 listener 的 `max_conn_rate` 可限制每秒新连接数，用来给风暴削峰）。
 - 压测程序用 `--ramp 50` 起步，逐步加大。
 
+## 5a. 写入并行度与 EMQX 回调的长连接
+**写入队列分片**：`latest`（最新值）、`history`（属性历史）、`message-log`（通信记录）三个队列原来各只有一个写入线程，一个线程能写的行数就是上限（压测里 `latest` 约 2.4 万行/秒，之后积压增长到 12.5 万）。现在每个队列拆成几个并行分片，**按设备 ID 哈希**分配：同一台设备始终在同一个分片里（顺序不变），不同分片更新的是不同的行（互不加锁）。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `IOT_BATCH_WORKERS` | 4 | `latest` 的写入线程数（每个线程各占一个数据库连接） |
+| `IOT_BATCH_HISTORY_WORKERS` | 2 | `history` 的写入线程数 |
+| `IOT_BATCH_LOG_WORKERS` | 2 | `message-log` 的写入线程数 |
+
+总容量（`IOT_BATCH_QUEUE`）平均分给各分片；指标仍是 `iot_batch_queue_*{queue}`，多了 `shard` 标签（看板按 queue 求和，不受影响）。设为 1 就回到单线程。线程数多了会同时占用更多数据库连接（连接池默认 20），也会让 PostgreSQL 的更新更密集，数据库本身的写入能力仍是上限；PostgreSQL 的 `synchronous_commit=off` 能明显提高写入速度，代价是宕机时最多丢最后几百毫秒已提交的数据，没有默认开启。
+
+**EMQX 回调的 HTTP 长连接**：EMQX 用少量长连接、流水线地调用后端的 `/api/mqtt/auth` 和 `/api/mqtt/acl`。Tomcat 默认一个连接处理 100 个请求后就关闭它，在途请求被切断，EMQX 日志里是 `The connection was lost` / `resource not connected`，设备在没有询问后端的情况下被拒绝（NOT_AUTHORIZED）。现在 `server.tomcat.max-keep-alive-requests` 为 -1（不限）、`keep-alive-timeout` 120 秒（`IOT_TOMCAT_MAX_KEEPALIVE_REQUESTS`、`IOT_TOMCAT_KEEPALIVE_TIMEOUT`）。
+
 ## 5b. EMQX 对平台订阅的限制（几千条/秒以上要调）
 平台只用**一个** MQTT 连接订阅全部设备消息。EMQX 默认对每个订阅者：未确认的 QoS 1 窗口 32、排队上限 1000、连接进程邮箱上限 1000、进程堆上限 32 MB。设备消息到达得比后端确认得快时，队列和邮箱先满，EMQX 就丢投递（`emqx_delivery_dropped_queue_full`），邮箱超限时直接关闭这个连接（EMQX 日志 `mailbox_overflow`，后端日志 `MQTT gateway connection lost`）。一万设备压测里在约 3000～7000 条/秒时出现过。
 

@@ -2,6 +2,11 @@ server:
   tomcat:
     mbeanregistry:
       enabled: true   # exposes tomcat_threads_* metrics for the Grafana dashboard
+    # EMQX calls /api/mqtt/auth and /api/mqtt/acl over a few long-lived, pipelined HTTP connections. Tomcat's default
+    # closes a connection after 100 requests, which cut requests in flight ("The connection was lost") and made EMQX
+    # mark the HTTP resource as not connected, refusing devices with NOT_AUTHORIZED without asking the backend.
+    max-keep-alive-requests: ${IOT_TOMCAT_MAX_KEEPALIVE_REQUESTS:-1}
+    keep-alive-timeout: ${IOT_TOMCAT_KEEPALIVE_TIMEOUT:120s}
     threads:
       max: ${IOT_TOMCAT_THREADS:400}
     accept-count: ${IOT_TOMCAT_ACCEPT_COUNT:500}
@@ -129,6 +134,10 @@ iot:
       queue-capacity: ${IOT_BATCH_QUEUE:200000}
       max-batch: ${IOT_BATCH_MAX:2000}
       history-max-batch: ${IOT_BATCH_HISTORY_MAX:5000}
+      # parallel writer threads per queue (spread by device id); 1 = a single writer
+      workers: ${IOT_BATCH_WORKERS:4}
+      history-workers: ${IOT_BATCH_HISTORY_WORKERS:2}
+      log-workers: ${IOT_BATCH_LOG_WORKERS:2}
       log-ok-property: ${IOT_LOG_OK_PROPERTY:true}
     kafka:
       topic: ${IOT_KAFKA_TOPIC:iot-uplink}
