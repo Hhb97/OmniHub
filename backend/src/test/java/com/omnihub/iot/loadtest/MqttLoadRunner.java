@@ -6,6 +6,8 @@ import com.hivemq.client.mqtt.MqttClient;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt3.Mqtt3AsyncClient;
 import com.hivemq.client.mqtt.mqtt3.exceptions.Mqtt3ConnAckException;
+import com.hivemq.client.mqtt.mqtt3.lifecycle.Mqtt3ClientReconnector;
+import com.hivemq.client.mqtt.mqtt3.message.connect.Mqtt3Connect;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -403,6 +405,16 @@ public final class MqttLoadRunner {
         AtomicBoolean everConnected = new AtomicBoolean();
         AtomicLong seq = new AtomicLong();
 
+        // One complete connect message (credentials and last will) for the first connect AND for every reconnect, set
+        // explicitly so that no reconnect depends on what the client library would use by default. In a 10000-device
+        // run EMQX traces showed devices reconnecting after a lost connection with "Username=undefined" and no will
+        // (every one refused with NOT_AUTHORIZED); this could not be reproduced with a local broker, so the cause
+        // inside the library is unconfirmed, but with the message given explicitly the reconnects carry the credentials.
+        Mqtt3Connect connect = Mqtt3Connect.builder().keepAlive(30).cleanSession(true).simpleAuth().username(clientId)
+                .password(dev.secret().getBytes(StandardCharsets.UTF_8)).applySimpleAuth().willPublish()
+                .topic(base + "/status").payload("{\"state\":\"offline\"}".getBytes(StandardCharsets.UTF_8))
+                .qos(MqttQos.AT_LEAST_ONCE).applyWillPublish().build();
+
         Mqtt3AsyncClient client = MqttClient.builder().useMqttVersion3().identifier(clientId).serverHost(host)
                 .serverPort(port).automaticReconnectWithDefaultConfig().addConnectedListener(ctx -> {
                     if (up.compareAndSet(false, true)) {
@@ -413,6 +425,11 @@ public final class MqttLoadRunner {
                         }
                     }
                 }).addDisconnectedListener(ctx -> {
+                    if (ctx.getSource() != com.hivemq.client.mqtt.lifecycle.MqttDisconnectSource.USER) {
+                        if (ctx.getReconnector() instanceof Mqtt3ClientReconnector reconnector) {
+                            reconnector.connect(connect);
+                        }
+                    }
                     boolean wasUp = up.compareAndSet(true, false);
                     if (wasUp) {
                         st.connected.decrementAndGet();
@@ -429,10 +446,7 @@ public final class MqttLoadRunner {
                 }).buildAsync();
         st.started.incrementAndGet();
 
-        client.connectWith().keepAlive(30).cleanSession(true).simpleAuth().username(clientId)
-                .password(dev.secret().getBytes(StandardCharsets.UTF_8)).applySimpleAuth().willPublish()
-                .topic(base + "/status").payload("{\"state\":\"offline\"}".getBytes(StandardCharsets.UTF_8))
-                .qos(MqttQos.AT_LEAST_ONCE).applyWillPublish().send().whenComplete((ack, err) -> {
+        client.connect(connect).whenComplete((ack, err) -> {
                     if (err != null) {
                         if (err instanceof Mqtt3ConnAckException) {
                             st.authFail.increment();
