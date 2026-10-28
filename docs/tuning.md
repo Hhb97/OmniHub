@@ -53,6 +53,24 @@
 - 监听器的**最大连接数**、**acceptors**、**连接速率限制**（EMQX 5 listener 的 `max_conn_rate` 可限制每秒新连接数，用来给风暴削峰）。
 - 压测程序用 `--ramp 50` 起步，逐步加大。
 
+## 5b. EMQX 对平台订阅的限制（几千条/秒以上要调）
+平台只用**一个** MQTT 连接订阅全部设备消息。EMQX 默认对每个订阅者：未确认的 QoS 1 窗口 32、排队上限 1000、连接进程邮箱上限 1000、进程堆上限 32 MB。设备消息到达得比后端确认得快时，队列和邮箱先满，EMQX 就丢投递（`emqx_delivery_dropped_queue_full`），邮箱超限时直接关闭这个连接（EMQX 日志 `mailbox_overflow`，后端日志 `MQTT gateway connection lost`）。一万设备压测里在约 3000～7000 条/秒时出现过。
+
+`docker-compose.yml` 里用环境变量调大了（`.env` 里可改，默认值如下）：
+
+| 变量 | 默认 | EMQX 原默认 |
+|---|---|---|
+| `EMQX_MAX_INFLIGHT` | 1024 | 32 |
+| `EMQX_MAX_MQUEUE_LEN` | 100000 | 1000 |
+| `EMQX_MAX_MAILBOX_SIZE` | 100000 | 1000 |
+| `EMQX_MAX_HEAP_SIZE` | 512MB | 32MB |
+| `EMQX_TCP_BACKLOG` | 4096（不要超过主机 `net.core.somaxconn`） | 1024 |
+
+- 这些值对**所有**客户端生效；设备一般只有自己的下行主题，影响很小。队列满时每条消息占用内存，最坏情况每个订阅者多占几十 MB。
+- 用环境变量设置的值优先于 EMQX 控制台里的修改；要在控制台里调，先删掉 compose 里对应的变量。
+- 核对是否生效：`curl -s -u … http://<主机>:18083/api/v5/configs/mqtt` 里的 `max_inflight`、`max_mqueue_len`，以及 `…/configs/force_shutdown`。
+- **这只是放宽限制，不是根治**：所有消息仍经过同一个订阅连接，后端对这个连接的处理速度仍是上限。根治需要共享订阅（`$share/<组>/…`）加多个消费连接并行，也是后端多实例的前提，目前没有实现。
+
 ## 6. 操作系统（EMQX 所在虚拟机）
 - 文件句柄：`ulimit -n` 至少 `连接数×2`，EMQX 官方建议很大的值（如 1048576），并确认 EMQX 进程实际生效（`cat /proc/<pid>/limits`）。
 - `net.core.somaxconn`、`net.ipv4.tcp_max_syn_backlog` 适当调大；`net.ipv4.ip_local_port_range` 扩大（压测机）。

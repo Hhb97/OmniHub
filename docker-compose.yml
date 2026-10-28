@@ -48,6 +48,14 @@ services:
       # Device authentication / topic ACL are delegated to the backend. They are applied by deploy/emqx-bootstrap.sh
       # (EMQX REST API) after start-up, which is easier to verify and to repair than environment overrides.
       EMQX_AUTHORIZATION__NO_MATCH: deny
+      # Limits for the platform's single subscription, which receives every device message (docs/tuning.md §EMQX).
+      # With EMQX's defaults (inflight window 32, queue 1000, mailbox 1000) it drops deliveries and EMQX shuts the
+      # connection down with "mailbox_overflow" at a few thousand messages per second.
+      EMQX_MQTT__MAX_INFLIGHT: ${EMQX_MAX_INFLIGHT:-1024}
+      EMQX_MQTT__MAX_MQUEUE_LEN: ${EMQX_MAX_MQUEUE_LEN:-100000}
+      EMQX_FORCE_SHUTDOWN__MAX_MAILBOX_SIZE: ${EMQX_MAX_MAILBOX_SIZE:-100000}
+      EMQX_FORCE_SHUTDOWN__MAX_HEAP_SIZE: ${EMQX_MAX_HEAP_SIZE:-512MB}
+      EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__BACKLOG: ${EMQX_TCP_BACKLOG:-4096}
     ports:
       - "${MQTT_PORT:-1883}:1883"
       - "${EMQX_DASHBOARD_PORT:-18083}:18083"
