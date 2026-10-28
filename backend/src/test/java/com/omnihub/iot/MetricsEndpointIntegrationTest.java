@@ -2,7 +2,9 @@ package com.omnihub.iot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.omnihub.iot.dashboard.BusinessMetrics;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +26,10 @@ class MetricsEndpointIntegrationTest {
     int port;
     @Autowired
     TestRestTemplate rest;
+    @Autowired
+    JdbcTemplate jdbc;
+    @Autowired
+    BusinessMetrics businessMetrics;
 
     private ResponseEntity<String> scrape(String authorization) {
         HttpHeaders h = new HttpHeaders();
@@ -44,6 +50,42 @@ class MetricsEndpointIntegrationTest {
     void aUserJwtDoesNotOpenTheMetricsEndpoint() {
         // a login token is a different credential: only the metrics token works
         assertThat(scrape("Bearer eyJhbGciOiJIUzI1NiJ9.e30.invalid").getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void exposesBusinessFiguresFromTheDatabase() {
+        Long tenant = jdbc.queryForObject("SELECT id FROM sys_tenant ORDER BY id LIMIT 1", Long.class);
+        jdbc.update("INSERT INTO iot_product (tenant_id, name, product_key) VALUES (?, 'Metrics test product', 'bmpk')",
+                tenant);
+        Long product = jdbc.queryForObject("SELECT id FROM iot_product WHERE product_key = 'bmpk'", Long.class);
+        String[][] devices = { { "d1", "ONLINE", "true" }, { "d2", "ONLINE", "true" }, { "d3", "OFFLINE", "true" },
+                { "d4", "INACTIVE", "false" } };
+        for (String[] d : devices) {
+            jdbc.update("""
+                    INSERT INTO iot_device (tenant_id, product_id, name, device_key, secret_hash, secret_salt, enabled,
+                                            online_status) VALUES (?, ?, ?, ?, 'h', 's', ?, ?)""", tenant, product, d[0],
+                    d[0], Boolean.parseBoolean(d[2]), d[1]);
+        }
+        try {
+            businessMetrics.refresh();
+            String body = scrape("Bearer test-metrics-token").getBody();
+            assertThat(body)
+                    .contains("iot_product_devices{application=\"iot-backend\",product_key=\"bmpk\",product_name=\"Metrics test product\",status=\"ONLINE\"} 2.0")
+                    .contains("iot_product_devices{application=\"iot-backend\",product_key=\"bmpk\",product_name=\"Metrics test product\",status=\"OFFLINE\"} 1.0")
+                    .contains("iot_product_devices{application=\"iot-backend\",product_key=\"bmpk\",product_name=\"Metrics test product\",status=\"INACTIVE\"} 1.0")
+                    .contains("iot_devices{application=\"iot-backend\",status=\"ONLINE\"}")
+                    .contains("iot_devices_disabled{application=\"iot-backend\"}")
+                    .contains("iot_alarms_active{application=\"iot-backend\",level=\"CRITICAL\"}")
+                    .contains("iot_commands_in_flight{application=\"iot-backend\",status=\"PENDING\"}")
+                    .contains("iot_business_metrics_last_refresh_timestamp_seconds")
+                    .contains("iot_devices_online_in_memory");
+        } finally {
+            jdbc.update("DELETE FROM iot_device WHERE product_id = ?", product);
+            jdbc.update("DELETE FROM iot_product WHERE id = ?", product);
+        }
+        // the series of a deleted product disappear again at the next refresh
+        businessMetrics.refresh();
+        assertThat(scrape("Bearer test-metrics-token").getBody()).doesNotContain("product_key=\"bmpk\"");
     }
 
     @Test

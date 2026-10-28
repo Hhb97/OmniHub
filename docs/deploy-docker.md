@@ -83,6 +83,7 @@ InfluxDB 的历史数据在卷 `influxdata`，保留策略默认 90 天（`IOT_I
 |---|---|
 | `docker compose up` 构建很慢或失败 | 主机访问 Maven/npm/Docker Hub 不通：配置镜像加速或代理 |
 | 前端打不开 | 防火墙没放行 `WEB_PORT`；`docker compose ps` 看 frontend 是否运行 |
+| 登录时返回 `Invalid CORS request`（HTTP 403） | 经 nginx 转发时 Host 头丢了端口（用 `$host` 而不是 `$http_host`），后端把同源请求当成跨域。`deploy/nginx.conf` 已改为 `$http_host`；换了反向代理的话要保证它把浏览器的 `Host`（含端口）原样转给后端，或者在 `.env` 里设置 `IOT_CORS_ORIGINS` |
 | 页面能开但登录失败 | `docker compose logs backend`；确认 `.env` 里 `IOT_ADMIN_PASSWORD` 至少 8 位（管理员只在用户表为空时创建） |
 | 设备连不上（NOT_AUTHORIZED） | 先跑 `sh deploy/emqx-bootstrap.sh`；看 `docker compose logs backend` 里有没有 `Broker hook rejected`（令牌不一致）；EMQX Dashboard 的认证页确认 HTTP 认证状态为已连接 |
 | 后端一直 `MQTT gateway cannot connect` | EMQX 还没配好回调（后端自己的 `platform` 账号也走回调）；运行 bootstrap 脚本 |

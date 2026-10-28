@@ -76,6 +76,16 @@ public class DeviceRuntime {
         this.cfg = props.getDevice();
     }
 
+    /** Devices this instance believes are ONLINE (memory only): compared with the database count by the metrics. */
+    public int onlineKnownCount() {
+        return onlineKnown.size();
+    }
+
+    /** Known devices in the authentication cache (negative "unknown device" entries are not counted). */
+    public int authCacheSize() {
+        return (int) byClientId.values().stream().filter(c -> c.ref() != null).count();
+    }
+
     public String clientId(Device d) {
         Product p = productMapper.selectById(d.getProductId());
         return p.getProductKey() + "." + d.getDeviceKey();

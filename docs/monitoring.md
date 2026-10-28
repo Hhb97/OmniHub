@@ -32,6 +32,8 @@ node-exporter（主机）──────────┘
 
 **③ OmniHub · 系统与 JVM**：主机 CPU/内存/负载/磁盘/网络/TCP 连接与 TIME_WAIT/文件句柄；后端堆内存、GC、线程、Tomcat 忙线程、HTTP 请求速率与延迟。
 
+**④ OmniHub · 业务概览**：在线 / 离线 / 未激活 / 已禁用设备数、设备总数、**在线率**、设备数量变化、上下线事件速率（看连接抖动）、数据库与后端内存里的在线数对比、各产品的在线设备数和设备总数、产品数、认证缓存条数、页面实时连接数、活跃告警（按级别）、未确认告警、24 小时内触发的告警、启用的告警规则、在途下行指令、上行消息速率。
+
 ## 3. “消息积压”到底看哪里
 消息从 EMQX 到落库要经过几处排队，积压可能出现在任何一处，看板分别列出：
 
@@ -63,8 +65,18 @@ node-exporter（主机）──────────┘
 | `iot_batch_flush_seconds_bucket{queue}` | 一次批量写的耗时 |
 | `iot_lane_queue_pending / _max` | MQTT 处理线程队列 |
 | `iot_mqtt_gateway_connected` | 后端的 MQTT 连接是否正常 |
+| `iot_devices{status}` | 设备数：ONLINE / OFFLINE / INACTIVE（未删除的，所有租户合计） |
+| `iot_product_devices{product_key,product_name,status}` | 每个产品各状态的设备数（最多 600 条序列） |
+| `iot_devices_disabled`、`iot_products{status}` | 被禁用的设备数、产品数 |
+| `iot_alarms_active{level}`、`iot_alarms_unacknowledged`、`iot_alarms_triggered_24h`、`iot_alarm_rules_enabled` | 告警 |
+| `iot_commands_in_flight{status}` | 在途下行指令：PENDING / SENT / RECEIVED |
+| `iot_device_status_changes_total{to}` | 设备上线 / 下线事件数，`rate()` 即连接抖动 |
+| `iot_devices_online_in_memory`、`iot_device_auth_cache_entries`、`iot_ws_sessions` | 后端内存里认为在线的设备数、认证缓存条数、页面实时连接数 |
+| `iot_business_metrics_last_refresh_timestamp_seconds`、`iot_business_metrics_refresh_failures_total` | 业务指标的刷新时间和失败次数 |
 | `http_server_requests_seconds_*{uri,status}` | HTTP 请求（含 `/api/mqtt/auth`、`/api/mqtt/acl`） |
 | `jvm_*`、`tomcat_*`、`hikaricp_*`、`process_*` | Spring Boot 自带 |
+
+业务指标（`iot_devices` 等）由后端每 15 秒（`iot.metrics.business-refresh-seconds`）在后台查一次数据库后更新内存里的数值，Prometheus 抓取时不会查库，所以数值最多滞后 15 秒；范围是整套系统（所有租户）。
 
 ## 5. 安全
 - `/actuator/prometheus` 需要请求头 `Authorization: Bearer <IOT_METRICS_TOKEN>`；令牌为空时端点关闭；登录用的 JWT 不能读取它。令牌只在 `.env`，由 compose 传给后端和 Prometheus。
