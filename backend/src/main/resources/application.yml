@@ -100,10 +100,26 @@ iot:
     # secret shared with the broker's HTTP auth plugin (EMQX) calling /api/mqtt/auth and /api/mqtt/acl
     http-auth-token: ${IOT_MQTT_HTTP_AUTH_TOKEN:}
     subscribe-qos: ${IOT_MQTT_SUBSCRIBE_QOS:1}
+    # true: the broker keeps no session for this client after it disconnects. The client id is random per start, so a
+    # persistent session could never be resumed and every restart would leave an orphan session that keeps queueing
+    # (and dropping) all uplink messages in the broker. Subscriptions are re-established on every connect anyway.
+    clean-session: ${IOT_MQTT_CLEAN_SESSION:true}
     embedded-broker:
       enabled: false
       host: 0.0.0.0
       port: 1883
+  history:
+    # where property history goes: postgres | influxdb
+    store: ${IOT_HISTORY_STORE:postgres}
+  influxdb:
+    # InfluxDB 1.x, used when iot.history.store=influxdb
+    url: ${IOT_INFLUX_URL:http://localhost:8086}
+    database: ${IOT_INFLUX_DB:iot}
+    username: ${IOT_INFLUX_USER:}
+    password: ${IOT_INFLUX_PASSWORD:}
+    retention-policy: ${IOT_INFLUX_RP:}
+    create-database: ${IOT_INFLUX_CREATE_DB:false}
+    retention-days: ${IOT_INFLUX_RETENTION_DAYS:0}
   ingest:
     # direct (default): MQTT -> in-process lanes -> processing.  kafka: MQTT -> Kafka -> consumer -> processing.
     mode: ${IOT_INGEST_MODE:direct}

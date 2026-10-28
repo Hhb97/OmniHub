@@ -50,6 +50,8 @@ public class InfluxHistoryStore implements HistoryStore {
 
     @PostConstruct
     void init() {
+        log.info("InfluxDB history store: {} database '{}' (user {})", cfg.getUrl(), cfg.getDatabase(),
+                cfg.getUsername().isBlank() ? "none" : cfg.getUsername());
         if (cfg.isCreateDatabase()) {
             try {
                 query("POST", "CREATE DATABASE " + quoteIdent(cfg.getDatabase()));
@@ -109,8 +111,23 @@ public class InfluxHistoryStore implements HistoryStore {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new IllegalStateException("InfluxDB write failed: " + e.getMessage(), e);
+            throw new IllegalStateException("InfluxDB write failed (" + url + "): " + describe(e), e);
         }
+    }
+
+    /** Exception class and message down the cause chain: IOExceptions often have no message of their own. */
+    static String describe(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        for (Throwable t = e; t != null && sb.length() < 400; t = t.getCause() == t ? null : t.getCause()) {
+            if (sb.length() > 0) {
+                sb.append(" <- ");
+            }
+            sb.append(t.getClass().getSimpleName());
+            if (t.getMessage() != null) {
+                sb.append(": ").append(t.getMessage());
+            }
+        }
+        return sb.toString();
     }
 
     @Override
@@ -195,7 +212,7 @@ public class InfluxHistoryStore implements HistoryStore {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new IllegalStateException("InfluxDB query failed: " + e.getMessage(), e);
+            throw new IllegalStateException("InfluxDB query failed: " + describe(e), e);
         }
     }
 

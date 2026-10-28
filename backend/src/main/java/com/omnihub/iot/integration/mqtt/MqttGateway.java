@@ -101,7 +101,7 @@ public class MqttGateway implements DownlinkPublisher {
             opts.setUserName(cfg.getPlatformUsername());
             opts.setPassword(cfg.getPlatformPassword().toCharArray());
             opts.setAutomaticReconnect(true);
-            opts.setCleanSession(false);
+            opts.setCleanSession(cfg.isCleanSession());
             opts.setKeepAliveInterval(30);
             opts.setConnectionTimeout(10);
             opts.setMaxInflight(1000);

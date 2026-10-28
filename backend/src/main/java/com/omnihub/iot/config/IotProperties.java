@@ -41,6 +41,8 @@ public class IotProperties {
         private String httpAuthToken = "";
         /** QoS of the platform's uplink subscription: 1 = at least once, 0 = fastest (messages may be lost) */
         private int subscribeQos = 1;
+        /** see application.yml: a random client id per start makes a persistent session useless */
+        private boolean cleanSession = true;
         private EmbeddedBroker embeddedBroker = new EmbeddedBroker();
     }
 

@@ -41,6 +41,7 @@ public final class BatchQueue<T> implements AutoCloseable {
     private final AtomicLong written = new AtomicLong();
     private volatile boolean running = true;
     private volatile long lastDropLogAt;
+    private volatile long lastErrorStackAt;
     private volatile Timer flushTimer;
     private volatile DistributionSummary batchSize;
     private final Thread worker;
@@ -127,7 +128,13 @@ public final class BatchQueue<T> implements AutoCloseable {
             written.addAndGet(batch.size());
         } catch (Exception e) {
             dropped.addAndGet(batch.size());
-            log.error("Batch queue '{}' failed to write {} items, they are lost: {}", name, batch.size(), e.toString());
+            long now = System.currentTimeMillis();
+            if (now - lastErrorStackAt > 60_000) {
+                lastErrorStackAt = now; // the full stack trace once a minute, the one-line summary every time
+                log.error("Batch queue '{}' failed to write {} items, they are lost", name, batch.size(), e);
+            } else {
+                log.error("Batch queue '{}' failed to write {} items, they are lost: {}", name, batch.size(), e.toString());
+            }
         } finally {
             Timer t = flushTimer;
             if (t != null) {

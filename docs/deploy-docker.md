@@ -87,6 +87,8 @@ InfluxDB 的历史数据在卷 `influxdata`，保留策略默认 90 天（`IOT_I
 | 页面能开但登录失败 | `docker compose logs backend`；确认 `.env` 里 `IOT_ADMIN_PASSWORD` 至少 8 位（管理员只在用户表为空时创建） |
 | 设备连不上（NOT_AUTHORIZED） | 先跑 `sh deploy/emqx-bootstrap.sh`；看 `docker compose logs backend` 里有没有 `Broker hook rejected`（令牌不一致）；EMQX Dashboard 的认证页确认 HTTP 认证状态为已连接 |
 | 后端一直 `MQTT gateway cannot connect` | EMQX 还没配好回调（后端自己的 `platform` 账号也走回调）；运行 bootstrap 脚本 |
+| 看板“丢弃”持续大于 0，后端日志 `Batch queue 'history' failed to write ... InfluxDB write failed` | 属性历史写 InfluxDB 失败，数据已丢。先看日志里的异常类型（日志每分钟打一次完整堆栈）；启动时应该有 `InfluxDB history store: <url> database ...` 和 `database 'iot' ready` 两行，没有或地址不对说明 `IOT_INFLUX_*` 环境变量没有生效（后端的 `application.yml` 必须映射它们；曾经漏掉过，后端一直连默认的 `localhost:8086`）。InfluxDB 自带的 `_internal` 库里 `httpd.writeReq` 一直为 0，说明请求根本没到达它 |
+| EMQX 里有很多断开的 `iot-platform-…` 客户端、`emqx_delivery_dropped_queue_full` 在增长 | 后端每次启动用随机客户端 ID，旧版本用持久会话，重启后旧会话留在 EMQX 里继续排队并丢消息。现在默认 `IOT_MQTT_CLEAN_SESSION=true`；已有的残留会话可用 EMQX 的 `DELETE /api/v5/clients/<clientid>` 清除 |
 | 历史曲线为空 | `docker compose logs backend | grep -i influx`；InfluxDB 容器健康吗；`IOT_HISTORY_STORE` 是否为 influxdb |
 | 端口冲突 | 改 `.env` 里的 `WEB_PORT`、`MQTT_PORT`、`EMQX_DASHBOARD_PORT` 后 `docker compose up -d` |
 
