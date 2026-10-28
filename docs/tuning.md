@@ -66,6 +66,23 @@
 
 **EMQX 回调的 HTTP 长连接**：EMQX 用少量长连接、流水线地调用后端的 `/api/mqtt/auth` 和 `/api/mqtt/acl`。Tomcat 默认一个连接处理 100 个请求后就关闭它，在途请求被切断，EMQX 日志里是 `The connection was lost` / `resource not connected`，设备在没有询问后端的情况下被拒绝（NOT_AUTHORIZED）。现在 `server.tomcat.max-keep-alive-requests` 为 -1（不限）、`keep-alive-timeout` 120 秒（`IOT_TOMCAT_MAX_KEEPALIVE_REQUESTS`、`IOT_TOMCAT_KEEPALIVE_TIMEOUT`）。
 
+### PostgreSQL 参数与连接池（压测里实际发生过的停滞）
+一次压测里，处理量在 07:51 前后从约 4300 条/秒掉到 400～900 条/秒，持续约 2 分钟：连接池（20）全部占满、等待 6～16 个、获取连接最长等了 3.4 秒，同时 PG 每秒更新的行数从 2.5 万掉到 2000，VM 负载到 30～37（16 核）。8 个 Kafka 消费线程都在等数据库，`latest` 队列涨满后被丢弃了 16.5 万条。PG 当时是镜像默认参数（`shared_buffers` 128 MB、`max_wal_size` 1 GB、每次提交同步刷盘），日志有 `checkpoints are occurring too frequently`，后台写入统计里大部分缓冲区是业务连接自己写的。没有死锁和锁等待，更新基本是 HOT。**停滞当时没有采样，上面是事后证据，PG 参数是不是唯一原因没有证实。**
+
+`docker-compose.yml` 现在用下面的参数启动 PG（`.env` 里可改）：
+
+| 参数 | 默认 | 镜像原默认 |
+|---|---|---|
+| `PG_SHARED_BUFFERS` | 2GB | 128MB |
+| `PG_EFFECTIVE_CACHE_SIZE` | 6GB | 4GB |
+| `PG_MAX_WAL_SIZE` | 8GB（另 `checkpoint_timeout=15min`、`wal_buffers=64MB`、`wal_compression=on`） | 1GB / 5min / 4MB / off |
+| `PG_MAX_CONNECTIONS` | 200 | 100 |
+| `PG_SYNCHRONOUS_COMMIT` | on | on |
+| 自动清理 | 15 秒一轮，死元组占 5% 就清（`autovacuum_naptime=15s`、`scale_factor=0.05`、`cost_limit=2000`） | 1 分钟 / 20% |
+| 磁盘假设 | SSD（`random_page_cost=1.1`、`effective_io_concurrency=200`） | HDD |
+
+`IOT_DB_POOL`（后端连接池）默认 40。**`PG_SYNCHRONOUS_COMMIT=off` 没有默认开启**：它能明显加快每次提交，代价是 PG 宕机时最多丢最后几百毫秒已提交的数据（不会损坏数据库）；压测想看写入上限时可以打开。**`IOT_LOG_OK_PROPERTY=false`** 也是压测的常用开关：每条属性上报都写一行通信记录（压测里一小时 530 万行、1.9 GB），关掉后这部分写入消失，代价是看板的"今日消息"和趋势会偏少。
+
 ## 5b. EMQX 对平台订阅的限制（几千条/秒以上要调）
 平台只用**一个** MQTT 连接订阅全部设备消息。EMQX 默认对每个订阅者：未确认的 QoS 1 窗口 32、排队上限 1000、连接进程邮箱上限 1000、进程堆上限 32 MB。设备消息到达得比后端确认得快时，队列和邮箱先满，EMQX 就丢投递（`emqx_delivery_dropped_queue_full`），邮箱超限时直接关闭这个连接（EMQX 日志 `mailbox_overflow`，后端日志 `MQTT gateway connection lost`）。一万设备压测里在约 3000～7000 条/秒时出现过。
 
