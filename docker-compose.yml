@@ -1,11 +1,16 @@
-# Production-style stack: PostgreSQL + EMQX + backend + frontend (nginx).
+# Production-style stack: PostgreSQL + EMQX + InfluxDB 1.8 + backend + frontend (nginx).
 # Usage: cp .env.example .env && edit .env && docker compose up -d --build
+#        then, once EMQX is up:  sh deploy/emqx-bootstrap.sh   (configures device auth, see docs/deploy-docker.md)
 #
-# NOTE: this file was written but NOT run in the environment where the project was developed (no Docker there).
-# The EMQX authn/authz settings in particular are untested; see docs/troubleshooting.md.
+# Only these ports are published on the host: WEB_PORT (frontend), MQTT_PORT (devices), EMQX_DASHBOARD_PORT,
+# GRAFANA_PORT (monitoring), plus 9100 (node-exporter, host network).
+# PostgreSQL and InfluxDB stay on the internal network.
+#
+# NOTE: written for, but not yet verified on, a real Docker host (the development machine has no Docker).
 services:
   postgres:
-    image: postgres:16
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-iot}
       POSTGRES_USER: ${POSTGRES_USER:-iot}
@@ -18,38 +23,38 @@ services:
       timeout: 3s
       retries: 20
 
+  influxdb:
+    image: influxdb:1.8
+    restart: unless-stopped
+    environment:
+      INFLUXDB_DB: ${INFLUX_DB:-iot}
+      INFLUXDB_HTTP_AUTH_ENABLED: "true"
+      INFLUXDB_ADMIN_USER: ${INFLUX_USER:-influx}
+      INFLUXDB_ADMIN_PASSWORD: ${INFLUX_PASSWORD:?set INFLUX_PASSWORD in .env}
+    volumes:
+      - influxdata:/var/lib/influxdb
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8086/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   emqx:
-    image: emqx/emqx:5.8.0
+    image: ${EMQX_IMAGE:-emqx/emqx:5.8.0}
+    restart: unless-stopped
     environment:
       EMQX_ALLOW_ANONYMOUS: "false"
-      # device authentication is delegated to the platform backend
-      EMQX_AUTHENTICATION__1__MECHANISM: password_based
-      EMQX_AUTHENTICATION__1__BACKEND: http
-      EMQX_AUTHENTICATION__1__METHOD: post
-      EMQX_AUTHENTICATION__1__URL: http://backend:8080/api/mqtt/auth
-      EMQX_AUTHENTICATION__1__HEADERS__content-type: application/json
-      EMQX_AUTHENTICATION__1__HEADERS__x-broker-token: ${IOT_MQTT_HTTP_AUTH_TOKEN:?set IOT_MQTT_HTTP_AUTH_TOKEN in .env}
-      EMQX_AUTHENTICATION__1__BODY__clientid: "$${clientid}"
-      EMQX_AUTHENTICATION__1__BODY__username: "$${username}"
-      EMQX_AUTHENTICATION__1__BODY__password: "$${password}"
-      # topic ACL, also delegated to the backend
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:?set EMQX_DASHBOARD_PASSWORD in .env}
+      # Device authentication / topic ACL are delegated to the backend. They are applied by deploy/emqx-bootstrap.sh
+      # (EMQX REST API) after start-up, which is easier to verify and to repair than environment overrides.
       EMQX_AUTHORIZATION__NO_MATCH: deny
-      EMQX_AUTHORIZATION__SOURCES__1__TYPE: http
-      EMQX_AUTHORIZATION__SOURCES__1__ENABLE: "true"
-      EMQX_AUTHORIZATION__SOURCES__1__METHOD: post
-      EMQX_AUTHORIZATION__SOURCES__1__URL: http://backend:8080/api/mqtt/acl
-      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__content-type: application/json
-      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__x-broker-token: ${IOT_MQTT_HTTP_AUTH_TOKEN}
-      EMQX_AUTHORIZATION__SOURCES__1__BODY__clientid: "$${clientid}"
-      EMQX_AUTHORIZATION__SOURCES__1__BODY__username: "$${username}"
-      EMQX_AUTHORIZATION__SOURCES__1__BODY__topic: "$${topic}"
-      EMQX_AUTHORIZATION__SOURCES__1__BODY__action: "$${action}"
     ports:
       - "${MQTT_PORT:-1883}:1883"
+      - "${EMQX_DASHBOARD_PORT:-18083}:18083"
     volumes:
       - emqxdata:/opt/emqx/data
     healthcheck:
-      test: ["CMD", "emqx", "ctl", "status"]
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -58,12 +63,16 @@ services:
     build:
       context: .
       dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      influxdb:
         condition: service_healthy
       emqx:
         condition: service_started
     environment:
+      SERVER_PORT: 8080   # fixed: nginx, the healthcheck and EMQX callbacks all use 8080 inside the network
       IOT_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-iot}?stringtype=unspecified
       IOT_DB_USER: ${POSTGRES_USER:-iot}
       IOT_DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -73,31 +82,116 @@ services:
       IOT_MQTT_BROKER_URL: tcp://emqx:1883
       IOT_MQTT_USERNAME: ${IOT_MQTT_USERNAME:-platform}
       IOT_MQTT_PASSWORD: ${IOT_MQTT_PASSWORD:?set IOT_MQTT_PASSWORD in .env}
-      IOT_MQTT_HTTP_AUTH_TOKEN: ${IOT_MQTT_HTTP_AUTH_TOKEN}
+      IOT_MQTT_HTTP_AUTH_TOKEN: ${IOT_MQTT_HTTP_AUTH_TOKEN:?set IOT_MQTT_HTTP_AUTH_TOKEN in .env}
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
       IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
       IOT_API_DOCS_ENABLED: ${IOT_API_DOCS_ENABLED:-false}
-      # history store: postgres (default) or influxdb (needs IOT_INFLUX_URL to a reachable InfluxDB 1.x)
-      IOT_HISTORY_STORE: ${IOT_HISTORY_STORE:-postgres}
-      IOT_INFLUX_URL: ${IOT_INFLUX_URL:-http://localhost:8086}
-      IOT_INFLUX_DB: ${IOT_INFLUX_DB:-iot}
-      IOT_INFLUX_USER: ${IOT_INFLUX_USER:-}
-      IOT_INFLUX_PASSWORD: ${IOT_INFLUX_PASSWORD:-}
+      # history store: influxdb (default in this stack) or postgres
+      IOT_HISTORY_STORE: ${IOT_HISTORY_STORE:-influxdb}
+      IOT_INFLUX_URL: http://influxdb:8086
+      IOT_INFLUX_DB: ${INFLUX_DB:-iot}
+      IOT_INFLUX_USER: ${INFLUX_USER:-influx}
+      IOT_INFLUX_PASSWORD: ${INFLUX_PASSWORD}
+      IOT_INFLUX_CREATE_DB: "true"
+      IOT_INFLUX_RETENTION_DAYS: ${IOT_INFLUX_RETENTION_DAYS:-90}
+      # throughput settings (see docs/tuning.md); defaults are fine to start with
+      IOT_INGEST_MODE: ${IOT_INGEST_MODE:-direct}
+      IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN:?set IOT_METRICS_TOKEN in .env}
+      IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-true}
+      JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--XX:MaxRAMPercentage=70}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      test: ["CMD-SHELL", "(curl -sf http://localhost:8080/actuator/health || wget -qO- http://localhost:8080/actuator/health) | grep -q UP"]
       interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 30
 
   frontend:
     build:
       context: .
       dockerfile: deploy/frontend.Dockerfile
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "${WEB_PORT:-80}:80"
+      - "${WEB_PORT:-8088}:80"
+
+  # ---------------------------------------------------------------- monitoring (docs/monitoring.md)
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.53.0}
+    restart: unless-stopped
+    # credentials are written to files from the environment at start-up; prometheus.yml references the files
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf '%s' "$$IOT_METRICS_TOKEN" > /tmp/metrics_token
+        printf '%s' "$$INFLUX_USER" > /tmp/influx_user
+        printf '%s' "$$INFLUX_PASSWORD" > /tmp/influx_password
+        printf '%s' "$$EMQX_API_KEY" > /tmp/emqx_api_key
+        printf '%s' "$$EMQX_API_SECRET" > /tmp/emqx_api_secret
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=$${PROMETHEUS_RETENTION:-15d}
+    environment:
+      IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN}
+      INFLUX_USER: ${INFLUX_USER:-influx}
+      INFLUX_PASSWORD: ${INFLUX_PASSWORD}
+      EMQX_API_KEY: ${EMQX_API_KEY:-}
+      EMQX_API_SECRET: ${EMQX_API_SECRET:-}
+      PROMETHEUS_RETENTION: ${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-iot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-iot}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Host network on purpose: network and TCP figures must be the host's, not a container's.
+  # It listens on :9100 on every interface of the host: restrict it with the firewall to trusted machines.
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=:9100
+    volumes:
+      - /:/host:ro,rslave
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/omnihub-platform.json
+      INFLUX_DB: ${INFLUX_DB:-iot}
+      INFLUX_USER: ${INFLUX_USER:-influx}
+      INFLUX_PASSWORD: ${INFLUX_PASSWORD}
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:
+  influxdata:
   emqxdata:
+  promdata:
+  grafanadata:

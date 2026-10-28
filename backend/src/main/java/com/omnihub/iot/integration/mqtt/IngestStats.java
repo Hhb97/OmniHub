@@ -1,10 +1,14 @@
 package com.omnihub.iot.integration.mqtt;
 
 import com.omnihub.iot.config.IotProperties;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +16,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Throughput / queue-delay statistics for load tests.
+ * Throughput / queue-delay statistics for load tests and monitoring.
  * - TPS = uplink messages per second that entered the processor (counted per message, all message types).
  * - delay = time between the platform receiving the MQTT message and starting to process it. In direct mode that
  *   is the in-memory lane wait; in kafka mode it also includes the Kafka round trip. It does not include DB time.
- * A 1-second sampler keeps the last 60 seconds for the dashboard; a 10-second log line is written while busy.
+ * A 1-second sampler keeps the last 60 seconds for the dashboard page; a 10-second log line is written while busy.
+ * The same numbers are published to Prometheus (iot_ingest_*, iot_uplink_*), see docs/monitoring.md.
  */
 @Component
 public class IngestStats {
@@ -33,6 +38,12 @@ public class IngestStats {
     }
 
     private final String mode;
+    private final MeterRegistry registry;
+    private final Counter processedMeter;
+    private final Counter droppedMeter;
+    private final DistributionSummary delayMeter;
+    private final ConcurrentHashMap<String, Counter> byType = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Counter> rejected = new ConcurrentHashMap<>();
 
     // log window (reset every 10s)
     private final AtomicLong logCount = new AtomicLong();
@@ -49,8 +60,16 @@ public class IngestStats {
 
     private final Deque<Sample> samples = new ArrayDeque<>();
 
-    public IngestStats(IotProperties props) {
+    public IngestStats(IotProperties props, MeterRegistry registry) {
         this.mode = props.getIngest().getMode();
+        this.registry = registry;
+        this.processedMeter = Counter.builder("iot_ingest_processed_total")
+                .description("Uplink messages that entered the processor").register(registry);
+        this.droppedMeter = Counter.builder("iot_ingest_forward_dropped_total")
+                .description("Messages lost while forwarding to Kafka").register(registry);
+        this.delayMeter = DistributionSummary.builder("iot_ingest_delay_ms")
+                .description("Time from MQTT arrival to start of processing")
+                .serviceLevelObjectives(1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000).register(registry);
     }
 
     public void record(long delayMs) {
@@ -61,12 +80,27 @@ public class IngestStats {
         secCount.incrementAndGet();
         secSumDelay.addAndGet(delayMs);
         secMaxDelay.accumulateAndGet(delayMs, Math::max);
+        processedMeter.increment();
+        delayMeter.record(Math.max(0, delayMs));
+    }
+
+    /** Counts a message by kind (PROPERTY / EVENT / STATUS / REPLY). */
+    public void type(String type) {
+        byType.computeIfAbsent(type, t -> Counter.builder("iot_uplink_messages_total").tag("type", t)
+                .description("Uplink messages by kind").register(registry)).increment();
+    }
+
+    /** Counts a message that was not processed: unknown_device, disabled, oversize, bad_json, unsupported_topic. */
+    public void rejected(String reason) {
+        rejected.computeIfAbsent(reason, r -> Counter.builder("iot_uplink_rejected_total").tag("reason", r)
+                .description("Uplink messages dropped before processing").register(registry)).increment();
     }
 
     /** A message that could not be handed to Kafka and was lost. */
     public void dropped() {
         droppedTotal.incrementAndGet();
         logDropped.incrementAndGet();
+        droppedMeter.increment();
     }
 
     @Scheduled(fixedRate = 1000)

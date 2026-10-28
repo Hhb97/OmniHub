@@ -4,6 +4,8 @@ spring:
     url: jdbc:postgresql://localhost:${iot.embedded-postgres.port}/iot?stringtype=unspecified
 
 iot:
+  metrics:
+    token: test-metrics-token
   security:
     jwt-secret: test-only-jwt-secret-0123456789-0123456789
   admin:

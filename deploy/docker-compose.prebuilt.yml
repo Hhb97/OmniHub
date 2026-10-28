@@ -1,0 +1,11 @@
+# Overlay used with deploy-vm.ps1 -Prebuilt: backend and frontend images are assembled from artifacts built on the
+# workstation (no Maven / npm downloads on the Docker host). Selected through COMPOSE_FILE in the host's .env.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/backend.prebuilt.Dockerfile
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.prebuilt.Dockerfile

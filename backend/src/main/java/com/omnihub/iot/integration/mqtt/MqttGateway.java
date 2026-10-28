@@ -44,7 +44,8 @@ public class MqttGateway implements DownlinkPublisher {
     private volatile MqttClient client;
 
     public MqttGateway(IotProperties props, UplinkProcessor processor,
-            org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder) {
+            org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder,
+            io.micrometer.core.instrument.MeterRegistry meters) {
         this.forwarder = forwarder;
         this.props = props;
         this.processor = processor;
@@ -59,6 +60,14 @@ public class MqttGateway implements DownlinkPublisher {
                 return t;
             }, new ThreadPoolExecutor.CallerRunsPolicy());
         }
+        io.micrometer.core.instrument.Gauge.builder("iot_lane_queue_pending", lanes,
+                l -> java.util.Arrays.stream(l).mapToInt(x -> x.getQueue().size()).sum())
+                .description("MQTT messages waiting in the in-process lanes (direct mode backlog)").register(meters);
+        io.micrometer.core.instrument.Gauge.builder("iot_lane_queue_max", lanes,
+                l -> java.util.Arrays.stream(l).mapToInt(x -> x.getQueue().size()).max().orElse(0))
+                .description("Backlog of the fullest lane").register(meters);
+        io.micrometer.core.instrument.Gauge.builder("iot_mqtt_gateway_connected", this, g -> g.isConnected() ? 1 : 0)
+                .description("1 when the platform's MQTT client is connected to the broker").register(meters);
     }
 
     @PostConstruct

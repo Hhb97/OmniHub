@@ -69,17 +69,20 @@ public class UplinkProcessor {
         Optional<Topics.Parsed> parsed = Topics.parse(topic);
         if (parsed.isEmpty() || !Topics.UPLINK_KINDS.contains(parsed.get().kind())) {
             log.debug("Ignoring message on unsupported topic {}", topic);
+            stats.rejected("unsupported_topic");
             return;
         }
         Topics.Parsed t = parsed.get();
         Optional<DeviceRef> found = runtime.resolve(t.productKey(), t.deviceKey());
         if (found.isEmpty()) {
             log.warn("Message for unknown device {} dropped (topic {})", t.clientId(), topic);
+            stats.rejected("unknown_device");
             return;
         }
         DeviceRef ref = found.get();
         if (!ref.enabled() || !ref.productEnabled()) {
             log.warn("Message from disabled device {} dropped", t.clientId());
+            stats.rejected("disabled");
             return;
         }
         String type = switch (t.kind()) {
@@ -88,8 +91,10 @@ public class UplinkProcessor {
             case "status" -> "STATUS";
             default -> "REPLY";
         };
+        stats.type(type);
         if (payload.length > MAX_PAYLOAD_BYTES) {
             messageLogger.log(ref.id(), "UP", type, topic, "[" + payload.length + " bytes]", "INVALID", "消息超过 16KB 限制");
+            stats.rejected("oversize");
             return;
         }
         String text = new String(payload, StandardCharsets.UTF_8);
@@ -98,10 +103,12 @@ public class UplinkProcessor {
             body = Jsons.parse(text);
         } catch (IllegalArgumentException e) {
             messageLogger.log(ref.id(), "UP", type, topic, text, "INVALID", "不是合法的 JSON");
+            stats.rejected("bad_json");
             return;
         }
         if (body == null || !body.isObject()) {
             messageLogger.log(ref.id(), "UP", type, topic, text, "INVALID", "消息体必须是 JSON 对象");
+            stats.rejected("bad_json");
             return;
         }
         switch (t.kind()) {

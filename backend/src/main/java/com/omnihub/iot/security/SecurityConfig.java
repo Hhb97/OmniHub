@@ -31,7 +31,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtFilter) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtFilter,
+            MetricsTokenFilter metricsFilter) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable).cors(c -> {
         }).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -40,6 +41,7 @@ public class SecurityConfig {
                         .requestMatchers("/ws").permitAll()
                         // called by the MQTT broker, protected by a shared secret header inside the controller
                         .requestMatchers("/api/mqtt/auth", "/api/mqtt/acl").permitAll()
+                        .requestMatchers("/actuator/prometheus").hasAuthority("METRICS")
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint((req, res, ex) -> {
@@ -50,7 +52,8 @@ public class SecurityConfig {
                     res.setStatus(403);
                     res.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
                     res.getWriter().write(Jsons.toJson(ApiResponse.error(403, "无权限执行该操作", null)));
-                })).addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                })).addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(metricsFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

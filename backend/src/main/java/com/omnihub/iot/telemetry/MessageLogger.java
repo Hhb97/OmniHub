@@ -30,11 +30,11 @@ public class MessageLogger {
     private final boolean logOkProperty;
     private final BatchQueue<Row> queue;
 
-    public MessageLogger(JdbcTemplate jdbc, IotProperties props) {
+    public MessageLogger(JdbcTemplate jdbc, IotProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
         this.jdbc = jdbc;
         IotProperties.Batch b = props.getIngest().getBatch();
         this.logOkProperty = b.isLogOkProperty();
-        this.queue = new BatchQueue<>("message-log", b.getQueueCapacity(), b.getMaxBatch(), 100, this::write);
+        this.queue = new BatchQueue<>("message-log", b.getQueueCapacity(), b.getMaxBatch(), 100, this::write).bind(meters);
     }
 
     public void log(Long deviceId, String direction, String type, String topic, String payload, String result,

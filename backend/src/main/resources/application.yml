@@ -1,5 +1,7 @@
 server:
   tomcat:
+    mbeanregistry:
+      enabled: true   # exposes tomcat_threads_* metrics for the Grafana dashboard
     threads:
       max: ${IOT_TOMCAT_THREADS:400}
     accept-count: ${IOT_TOMCAT_ACCEPT_COUNT:500}
@@ -57,10 +59,16 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 management:
+  metrics:
+    tags:
+      application: iot-backend
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: never
@@ -81,6 +89,9 @@ iot:
     # The admin account is only created when this is set and no users exist yet.
     initial-password: ${IOT_ADMIN_PASSWORD:}
   cors-allowed-origins: ${IOT_CORS_ORIGINS:}
+  metrics:
+    # bearer token for /actuator/prometheus (Prometheus scrape); empty = endpoint closed
+    token: ${IOT_METRICS_TOKEN:}
   mqtt:
     broker-url: ${IOT_MQTT_BROKER_URL:tcp://localhost:1883}
     platform-username: ${IOT_MQTT_USERNAME:platform}

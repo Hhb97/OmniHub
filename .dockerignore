@@ -1,0 +1,16 @@
+.git
+.idea
+.vscode
+**/node_modules
+**/dist
+**/target
+backend/data
+*.log
+.env
+.env.*
+**/.env.local
+*.local.json
+loadtest.properties
+backend/loadtest.properties
+# local-only profile with your own hosts and passwords must never be baked into an image
+backend/src/main/resources/application-localext.yml

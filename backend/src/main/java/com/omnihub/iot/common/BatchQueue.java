@@ -1,5 +1,11 @@
 package com.omnihub.iot.common;
 
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.FunctionCounter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -19,6 +25,8 @@ import org.slf4j.LoggerFactory;
  *   the MQTT threads).
  * - a sink failure drops that batch (logged), it never kills the worker.
  * - close() writes whatever is still queued before returning.
+ * - bind() publishes the queue depth (the "backlog"), written / dropped counters, batch size and flush duration
+ *   as Micrometer metrics.
  */
 public final class BatchQueue<T> implements AutoCloseable {
 
@@ -33,6 +41,8 @@ public final class BatchQueue<T> implements AutoCloseable {
     private final AtomicLong written = new AtomicLong();
     private volatile boolean running = true;
     private volatile long lastDropLogAt;
+    private volatile Timer flushTimer;
+    private volatile DistributionSummary batchSize;
     private final Thread worker;
 
     public BatchQueue(String name, int capacity, int maxBatch, long idleWaitMs, Consumer<List<T>> sink) {
@@ -44,6 +54,24 @@ public final class BatchQueue<T> implements AutoCloseable {
         this.worker = new Thread(this::loop, "batch-" + name);
         this.worker.setDaemon(true);
         this.worker.start();
+    }
+
+    /** Publishes this queue's metrics, tagged queue=<name>. */
+    public BatchQueue<T> bind(MeterRegistry registry) {
+        Tags tags = Tags.of("queue", name);
+        Gauge.builder("iot_batch_queue_pending", queue, BlockingQueue::size)
+                .description("Items waiting to be written (the backlog)").tags(tags).register(registry);
+        Gauge.builder("iot_batch_queue_capacity", this, q -> q.queue.size() + q.queue.remainingCapacity())
+                .tags(tags).register(registry);
+        FunctionCounter.builder("iot_batch_queue_written_total", written, AtomicLong::doubleValue).tags(tags)
+                .register(registry);
+        FunctionCounter.builder("iot_batch_queue_dropped_total", dropped, AtomicLong::doubleValue)
+                .description("Items lost: queue full or write failed").tags(tags).register(registry);
+        this.flushTimer = Timer.builder("iot_batch_flush_seconds").description("Duration of one batch write")
+                .publishPercentileHistogram().tags(tags).register(registry);
+        this.batchSize = DistributionSummary.builder("iot_batch_size").description("Items per batch write")
+                .tags(tags).register(registry);
+        return this;
     }
 
     /** @return false when the queue is full and the item was dropped */
@@ -93,12 +121,22 @@ public final class BatchQueue<T> implements AutoCloseable {
     }
 
     private void flush(List<T> batch) {
+        long t0 = System.nanoTime();
         try {
             sink.accept(batch);
             written.addAndGet(batch.size());
         } catch (Exception e) {
             dropped.addAndGet(batch.size());
             log.error("Batch queue '{}' failed to write {} items, they are lost: {}", name, batch.size(), e.toString());
+        } finally {
+            Timer t = flushTimer;
+            if (t != null) {
+                t.record(System.nanoTime() - t0, TimeUnit.NANOSECONDS);
+            }
+            DistributionSummary s = batchSize;
+            if (s != null) {
+                s.record(batch.size());
+            }
         }
     }
 

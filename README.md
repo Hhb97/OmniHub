@@ -80,6 +80,8 @@ docker compose up -d --build
 - [压测程序（Java，读导出的设备 JSON 走 MQTT 上报）](docs/loadtest.md)
 - [吞吐优化与认证风暴](docs/tuning.md)
 - [批量写入逻辑（含 InfluxDB）](docs/batch-write.md)
+- [Docker 部署](docs/deploy-docker.md)
+- [监控：Prometheus + Grafana 看板](docs/monitoring.md)
 - [故障排查](docs/troubleshooting.md)
 
 ## 已知限制

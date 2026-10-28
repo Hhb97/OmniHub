@@ -84,12 +84,13 @@ public class TelemetryService {
     private final BatchQueue<HistoryStore.Sample> historyWriter;
 
     public TelemetryService(JdbcTemplate jdbc, ThingModelService thingModels, DeviceService deviceService,
-            ConfigService config, ApplicationEventPublisher events, HistoryStore history, IotProperties props) {
+            ConfigService config, ApplicationEventPublisher events, HistoryStore history, IotProperties props,
+            io.micrometer.core.instrument.MeterRegistry meters) {
         this.history = history;
         IotProperties.Batch b = props.getIngest().getBatch();
-        this.latestWriter = new BatchQueue<>("latest", b.getQueueCapacity(), b.getMaxBatch(), 100, this::flushLatest);
+        this.latestWriter = new BatchQueue<>("latest", b.getQueueCapacity(), b.getMaxBatch(), 100, this::flushLatest).bind(meters);
         this.historyWriter = new BatchQueue<>("history", b.getQueueCapacity(), b.getHistoryMaxBatch(), 100,
-                this::flushHistory);
+                this::flushHistory).bind(meters);
         this.jdbc = jdbc;
         this.thingModels = thingModels;
         this.deviceService = deviceService;

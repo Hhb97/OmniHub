@@ -4,7 +4,7 @@ WORKDIR /src
 COPY backend/pom.xml .
 RUN mvn -B -q -P '!embedded' -Djava.version=21 dependency:go-offline
 COPY backend/src ./src
-RUN mvn -B -q -P '!embedded' -Djava.version=21 -DskipTests package
+RUN mvn -B -q -P '!embedded' -Djava.version=21 -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:21-jre
 RUN useradd --system --uid 10001 iot && apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*

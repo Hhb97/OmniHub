@@ -9,3 +9,4 @@ backend/data/
 .vscode/
 backend/loadtest.properties
 loadtest.properties
+deploy/prebuilt/

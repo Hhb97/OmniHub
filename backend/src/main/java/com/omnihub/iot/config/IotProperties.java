@@ -16,6 +16,7 @@ public class IotProperties {
     private Device device = new Device();
     private History history = new History();
     private Ingest ingest = new Ingest();
+    private Metrics metrics = new Metrics();
     private Influxdb influxdb = new Influxdb();
     private EmbeddedPostgres embeddedPostgres = new EmbeddedPostgres();
 
@@ -60,6 +61,12 @@ public class IotProperties {
         private int authCacheRefreshSeconds = 300;
         /** above this number of devices the warm-up is skipped and devices are cached lazily */
         private int authCacheMax = 200000;
+    }
+
+    @Data
+    public static class Metrics {
+        /** bearer token Prometheus uses for /actuator/prometheus; empty = endpoint closed */
+        private String token = "";
     }
 
     @Data

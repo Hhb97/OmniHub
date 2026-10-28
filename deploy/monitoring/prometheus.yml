@@ -1,0 +1,47 @@
+# Prometheus scrape configuration. Credentials come from files that the compose entrypoint writes from environment
+# variables (see docker-compose.yml, service "prometheus"); nothing secret is stored in this file.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Spring Boot backend: throughput, backlog, JVM, HTTP, connection pool. Bearer token = IOT_METRICS_TOKEN.
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    authorization:
+      type: Bearer
+      credentials_file: /tmp/metrics_token
+    static_configs:
+      - targets: ['backend:8080']
+
+  # EMQX built-in Prometheus endpoint. Basic auth with an EMQX API key when the endpoint requires one
+  # (deploy/emqx-bootstrap.sh creates it); harmless otherwise.
+  - job_name: emqx
+    metrics_path: /api/v5/prometheus/stats
+    basic_auth:
+      username_file: /tmp/emqx_api_key
+      password_file: /tmp/emqx_api_secret
+    static_configs:
+      - targets: ['emqx:18083']
+
+  # InfluxDB 1.8 serves Go process metrics on /metrics (HTTP auth is enabled, so basic auth is needed).
+  - job_name: influxdb
+    metrics_path: /metrics
+    basic_auth:
+      username_file: /tmp/influx_user
+      password_file: /tmp/influx_password
+    static_configs:
+      - targets: ['influxdb:8086']
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # node-exporter runs on the host network (accurate host CPU / memory / disk / network figures)
+  - job_name: node
+    static_configs:
+      - targets: ['host.docker.internal:9100']
