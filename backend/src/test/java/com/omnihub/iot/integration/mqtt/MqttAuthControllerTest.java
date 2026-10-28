@@ -10,6 +10,7 @@ import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.integration.mqtt.MqttAuthController.AclRequest;
 import com.omnihub.iot.integration.mqtt.MqttAuthController.AuthRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ class MqttAuthControllerTest {
     private final DeviceRuntime runtime = mock(DeviceRuntime.class);
     private IotProperties props;
     private MqttAuthController controller;
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     @BeforeEach
     void setUp() {
@@ -34,7 +36,7 @@ class MqttAuthControllerTest {
         props.getMqtt().setHttpAuthToken(TOKEN);
         props.getMqtt().setPlatformUsername("platform");
         props.getMqtt().setPlatformPassword("platform-pass");
-        controller = new MqttAuthController(runtime, props);
+        controller = new MqttAuthController(runtime, props, meters);
     }
 
     private String auth(String clientId, String username, String password) {
@@ -89,12 +91,47 @@ class MqttAuthControllerTest {
 
     @Test
     void deviceAuthenticationIsDelegatedToTheRuntime() {
-        when(runtime.authenticate(DEVICE, DEVICE, "good")).thenReturn(true);
-        when(runtime.authenticate(DEVICE, DEVICE, "bad")).thenReturn(false);
+        when(runtime.check(DEVICE, DEVICE, "good")).thenReturn(DeviceRuntime.AuthResult.ALLOW);
+        when(runtime.check(DEVICE, DEVICE, "bad")).thenReturn(DeviceRuntime.AuthResult.BAD_SECRET);
+        when(runtime.check(DEVICE, null, "good")).thenReturn(DeviceRuntime.AuthResult.MALFORMED);
 
         assertThat(auth(DEVICE, DEVICE, "good")).isEqualTo("allow");
         assertThat(auth(DEVICE, DEVICE, "bad")).isEqualTo("deny");
-        assertThat(auth(DEVICE, null, "good")).isEqualTo("deny"); // mock default: false
+        assertThat(auth(DEVICE, null, "good")).isEqualTo("deny");
+    }
+
+    private double counter(String kind, String result, String reason) {
+        io.micrometer.core.instrument.Counter c = meters.find("iot_mqtt_" + kind + "_total").tag("result", result)
+                .tag("reason", reason).counter();
+        return c == null ? 0 : c.count();
+    }
+
+    @Test
+    void everyDecisionIsCountedByResultAndReason() {
+        when(runtime.check(DEVICE, DEVICE, "good")).thenReturn(DeviceRuntime.AuthResult.ALLOW);
+        when(runtime.check(DEVICE, DEVICE, "bad")).thenReturn(DeviceRuntime.AuthResult.BAD_SECRET);
+        when(runtime.check("ghost.d", "ghost.d", "x")).thenReturn(DeviceRuntime.AuthResult.UNKNOWN_DEVICE);
+
+        auth(DEVICE, DEVICE, "good");
+        auth(DEVICE, DEVICE, "good");
+        for (int i = 0; i < 5; i++) {
+            auth(DEVICE, DEVICE, "bad");
+        }
+        auth("ghost.d", "ghost.d", "x");
+        auth("iot-platform", "platform", "platform-pass");
+        auth("iot-platform", "platform", "wrong");
+        acl(DEVICE, "publish", "iot/pk1/dev1/status");
+        acl(DEVICE, "publish", "iot/pk1/dev2/status");
+        acl(null, "publish", "iot/pk1/dev1/status");
+
+        assertThat(counter("auth", "allow", "device")).isEqualTo(2);
+        assertThat(counter("auth", "deny", "bad_secret")).isEqualTo(5);
+        assertThat(counter("auth", "deny", "unknown_device")).isEqualTo(1);
+        assertThat(counter("auth", "allow", "platform")).isEqualTo(1);
+        assertThat(counter("auth", "deny", "platform_bad_password")).isEqualTo(1);
+        assertThat(counter("acl", "allow", "device")).isEqualTo(1);
+        assertThat(counter("acl", "deny", "topic_not_allowed")).isEqualTo(1);
+        assertThat(counter("acl", "deny", "no_username")).isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ ACL

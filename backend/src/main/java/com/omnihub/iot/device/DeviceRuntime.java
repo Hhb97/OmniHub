@@ -181,12 +181,35 @@ public class DeviceRuntime {
 
     /** MQTT connect authentication: clientId == username == productKey.deviceKey, password == device secret. */
     public boolean authenticate(String clientId, String username, String password) {
-        if (clientId == null || !clientId.equals(username) || password == null) {
-            return false;
+        return check(clientId, username, password) == AuthResult.ALLOW;
+    }
+
+    /** Why a connect attempt was accepted or refused; the reason is what the metrics and the log samples report. */
+    public enum AuthResult {
+        ALLOW, MALFORMED, NO_PASSWORD, UNKNOWN_DEVICE, DISABLED, BAD_SECRET;
+
+        public String reason() {
+            return name().toLowerCase(java.util.Locale.ROOT);
         }
-        return resolveClientId(clientId)
-                .filter(r -> r.enabled() && r.productEnabled())
-                .map(r -> DeviceCredentials.matches(r.secretSalt(), r.secretHash(), password)).orElse(false);
+    }
+
+    public AuthResult check(String clientId, String username, String password) {
+        if (clientId == null || !clientId.equals(username)) {
+            return AuthResult.MALFORMED;
+        }
+        if (password == null || password.isEmpty()) {
+            return AuthResult.NO_PASSWORD;
+        }
+        Optional<DeviceRef> ref = resolveClientId(clientId);
+        if (ref.isEmpty()) {
+            return AuthResult.UNKNOWN_DEVICE;
+        }
+        DeviceRef r = ref.get();
+        if (!r.enabled() || !r.productEnabled()) {
+            return AuthResult.DISABLED;
+        }
+        return DeviceCredentials.matches(r.secretSalt(), r.secretHash(), password) ? AuthResult.ALLOW
+                : AuthResult.BAD_SECRET;
     }
 
     public void markConnected(Long deviceId) {

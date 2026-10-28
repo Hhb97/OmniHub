@@ -45,6 +45,18 @@ class DeviceRuntimeAuthCacheTest {
     }
 
     @Test
+    void checkNamesTheReasonForEveryRefusal() {
+        lookupReturns(List.of(ref));
+        assertThat(runtime.check("pk.dk", "pk.dk", SECRET)).isEqualTo(DeviceRuntime.AuthResult.ALLOW);
+        assertThat(runtime.check("pk.dk", "pk.dk", "wrong")).isEqualTo(DeviceRuntime.AuthResult.BAD_SECRET);
+        assertThat(runtime.check("pk.dk", "other", SECRET)).isEqualTo(DeviceRuntime.AuthResult.MALFORMED);
+        assertThat(runtime.check(null, null, SECRET)).isEqualTo(DeviceRuntime.AuthResult.MALFORMED);
+        assertThat(runtime.check("pk.dk", "pk.dk", null)).isEqualTo(DeviceRuntime.AuthResult.NO_PASSWORD);
+        assertThat(runtime.check("pk.dk", "pk.dk", "")).isEqualTo(DeviceRuntime.AuthResult.NO_PASSWORD);
+        assertThat(DeviceRuntime.AuthResult.BAD_SECRET.reason()).isEqualTo("bad_secret");
+    }
+
+    @Test
     void secondAuthenticationDoesNotTouchTheDatabase() {
         lookupReturns(List.of(ref));
         assertThat(runtime.authenticate("pk.dk", "pk.dk", SECRET)).isTrue();

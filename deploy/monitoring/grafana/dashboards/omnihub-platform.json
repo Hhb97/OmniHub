@@ -1190,7 +1190,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 56
       },
       "panels": []
     },
@@ -1207,7 +1207,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -1260,7 +1260,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -1313,7 +1313,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -1377,7 +1377,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 57
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -1433,7 +1433,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 57
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -1489,7 +1489,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 57
+        "y": 65
       },
       "fieldConfig": {
         "defaults": {
@@ -1549,7 +1549,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -1611,7 +1611,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -1644,6 +1644,112 @@
           "refId": "A",
           "expr": "max by (partition) (kafka_consumergroup_lag{topic=\"iot-uplink\"})",
           "legendFormat": "分区 {{partition}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "MQTT 认证结果（按原因）",
+      "description": "allow = 放行；deny 按原因：unknown_device 设备不存在，bad_secret 密钥不对，disabled 设备或产品被禁用，no_password 没带密码，malformed 用户名和 clientid 不一致。deny 持续出现时先看这张图，再看后端日志里的样本",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result, reason) (rate(iot_mqtt_auth_total[1m]))",
+          "legendFormat": "{{result}} · {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "MQTT 授权结果（按原因）",
+      "description": "发布/订阅主题授权：deny 的 reason 为 topic_not_allowed / malformed / no_username",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (result, reason) (rate(iot_mqtt_acl_total[1m]))",
+          "legendFormat": "{{result}} · {{reason}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

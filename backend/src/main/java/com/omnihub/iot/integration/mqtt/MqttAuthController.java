@@ -2,9 +2,12 @@ package com.omnihub.iot.integration.mqtt;
 
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,12 +35,35 @@ public class MqttAuthController {
     public record AclRequest(String clientid, String username, String topic, String action) {
     }
 
+    private static final long LOG_EVERY_MS = 10_000;
+
     private final DeviceRuntime runtime;
     private final IotProperties props;
+    private final MeterRegistry registry;
+    private final Map<String, Counter> counters = new ConcurrentHashMap<>();
+    /** last time a refusal with this reason was logged: one sample per reason every few seconds, never a flood */
+    private final Map<String, Long> lastLogged = new ConcurrentHashMap<>();
 
-    public MqttAuthController(DeviceRuntime runtime, IotProperties props) {
+    public MqttAuthController(DeviceRuntime runtime, IotProperties props, MeterRegistry registry) {
         this.runtime = runtime;
         this.props = props;
+        this.registry = registry;
+    }
+
+    /** Counts the outcome (iot_mqtt_auth_total / iot_mqtt_acl_total) and logs a sample of every refusal reason. */
+    private void count(String kind, boolean allow, String reason, String sample) {
+        String result = allow ? "allow" : "deny";
+        counters.computeIfAbsent(kind + "|" + result + "|" + reason, k -> Counter.builder("iot_mqtt_" + kind + "_total")
+                .description("Broker " + kind + " hook decisions by result and reason").tag("result", result)
+                .tag("reason", reason).register(registry)).increment();
+        if (!allow) {
+            long now = System.currentTimeMillis();
+            Long last = lastLogged.get(kind + reason);
+            if ((last == null || now - last > LOG_EVERY_MS) && lastLogged.put(kind + reason, now) == last) {
+                log.warn("MQTT {} refused: reason={} {} (one sample per {} s and reason; see iot_mqtt_{}_total)", kind,
+                        reason, sample, LOG_EVERY_MS / 1000, kind);
+            }
+        }
     }
 
     @PostMapping("/auth")
@@ -48,9 +74,16 @@ public class MqttAuthController {
             String expected = props.getMqtt().getPlatformPassword();
             boolean ok = !expected.isEmpty() && req.password() != null && MessageDigest.isEqual(
                     req.password().getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
+            count("auth", ok, ok ? "platform" : "platform_bad_password", "username=" + req.username());
             return Map.of("result", ok ? "allow" : "deny");
         }
-        return Map.of("result", runtime.authenticate(req.clientid(), req.username(), req.password()) ? "allow" : "deny");
+        DeviceRuntime.AuthResult r = runtime.check(req.clientid(), req.username(), req.password());
+        boolean ok = r == DeviceRuntime.AuthResult.ALLOW;
+        // never the password itself: its length is enough to tell "empty / truncated" from "wrong"
+        count("auth", ok, ok ? "device" : r.reason(), "clientid=" + req.clientid() + " usernameEqualsClientid="
+                + (req.clientid() != null && req.clientid().equals(req.username())) + " passwordLength="
+                + (req.password() == null ? -1 : req.password().length()));
+        return Map.of("result", ok ? "allow" : "deny");
     }
 
     @PostMapping("/acl")
@@ -59,12 +92,15 @@ public class MqttAuthController {
         checkToken(token);
         String user = req.username();
         if (user == null) {
+            count("acl", false, "no_username", "clientid=" + req.clientid());
             return Map.of("result", "deny");
         }
         if (user.equals(props.getMqtt().getPlatformUsername())) {
+            count("acl", true, "platform", "");
             return Map.of("result", "allow");
         }
         if (user.indexOf('.') <= 0 || req.topic() == null) {
+            count("acl", false, "malformed", "username=" + user + " topic=" + req.topic());
             return Map.of("result", "deny");
         }
         String prefix = Topics.prefix(user);
@@ -74,6 +110,8 @@ public class MqttAuthController {
         } else {
             ok = req.topic().equals(prefix + "command/down");
         }
+        count("acl", ok, ok ? "device" : "topic_not_allowed", "username=" + user + " action=" + req.action() + " topic="
+                + req.topic());
         return Map.of("result", ok ? "allow" : "deny");
     }
 
