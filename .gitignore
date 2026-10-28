@@ -10,3 +10,4 @@ backend/data/
 backend/loadtest.properties
 loadtest.properties
 deploy/prebuilt/
+*.local.json.partial

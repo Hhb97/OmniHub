@@ -6,7 +6,27 @@
 
 > 状态：已编译通过，**尚未对真实环境跑通验证**。第一次请先用少量设备（`--limit 10`）试跑。
 
-## 1. 准备设备文件
+## 0. 用脚本一次性创建产品、物模型和大量设备（推荐）
+`scripts/loadtest-setup.mjs`（需要 Node 18+）通过平台接口：创建产品（已存在则复用）→ 保存物模型（默认 `backend/src/test/resources/loadtest/thing-model.json`）→ 分批批量创建设备 → 生成压测程序要读的设备 JSON。
+```powershell
+node scripts/loadtest-setup.mjs --base http://<主机>:8088 --broker mqtt://<主机>:1883 --count 10000
+```
+管理员密码在终端里隐藏输入（或设环境变量 `OMNIHUB_PASSWORD`），不会写入任何文件。默认输出 `backend/devices-<数量>.local.json`（`*.local.json` 已被 git 忽略）。
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--base` | `http://localhost:8088` | 平台地址（经前端 nginx 或直接后端端口） |
+| `--broker` | 必填 | 写进设备文件的 MQTT 地址，压测程序连这个 |
+| `--count` | `10000` | 设备数量 |
+| `--prefix` | `LT` | 设备名前缀；多批创建时名称为 `LT-01-001`、`LT-01-002` … `LT-20-500`（前缀 + 批号 + 序号） |
+| `--chunk` | `500` | 每个请求创建多少台 |
+| `--product-key` / `--product-name` | `loadtest-sensor` / `LoadTest Sensor` | 产品；已存在且已有设备时脚本会拒绝，防止重复创建，要追加用 `--append` 并换 `--prefix` |
+| `--model` | 内置压测物模型 | 物模型 JSON |
+| `--out` | `backend/devices-<数量>.local.json` | 设备文件 |
+
+**设备密钥只在创建时返回一次**，所以每批创建后立即追加到 `<out>.partial`，全部成功后才生成最终文件。中途失败时凭证在 `.partial` 里；超时的那一批可能已在服务端创建了设备但脚本没拿到密钥，需要在页面上删掉多余的设备再重来。设备文件含密钥，不要提交、不要分享。
+
+## 1. 准备设备文件（用页面手动创建时）
 在前端“设备管理 → 批量新增”创建设备后，点“**下载 JSON 文件**”（或“复制全部 JSON”存成文件）。格式：
 
 ```json
