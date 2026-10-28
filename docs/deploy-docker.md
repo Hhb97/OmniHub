@@ -10,11 +10,13 @@
 | backend | 本仓库构建（JDK 21） | 不对外 | 容器内固定 8080 |
 | postgres | `postgres:16` | 不对外 | 业务数据、最新值、事件、通信记录 |
 | influxdb | `influxdb:1.8` | 不对外 | 属性历史（默认存这里；`IOT_HISTORY_STORE=postgres` 可改回 PG） |
+| kafka | `apache/kafka:3.9.0` | 不对外 | 单节点 KRaft；`IOT_INGEST_MODE=kafka` 时设备消息经它进入处理器，见 `docs/kafka-ingest.md` |
+| kafka-exporter | `danielqsj/kafka-exporter:v1.8.0` | 不对外 | topic 偏移量、消费积压 |
 | grafana | `grafana/grafana:10.4.2` | `GRAFANA_PORT`，默认 **3000** | 3 个监控看板，见 `docs/monitoring.md` |
 | prometheus | `prom/prometheus:v2.53.0` | 不对外 | 采集后端、EMQX、InfluxDB、PG、主机指标 |
 | postgres-exporter / node-exporter | exporter 镜像 | node-exporter 占主机 **9100** | PG 指标 / 主机指标（主机网络，请用防火墙限制） |
 
-数据卷：`pgdata`、`influxdata`、`emqxdata`、`promdata`、`grafanadata`，容器重建不丢数据。
+数据卷：`pgdata`、`influxdata`、`emqxdata`、`kafkadata`、`promdata`、`grafanadata`，容器重建不丢数据。
 
 ## 2. 主机要求
 - Docker Engine 和 compose 插件（`docker compose version` 能运行）。
@@ -89,5 +91,5 @@ InfluxDB 的历史数据在卷 `influxdata`，保留策略默认 90 天（`IOT_I
 
 ## 9. 限制
 - 没有 TLS：MQTT 和 HTTP 都是明文，仅适合内网；生产请在前面加 TLS 终结（负载均衡/反向代理）。
-- 单机单实例；PostgreSQL、InfluxDB 没有做高可用。
-- Kafka 不在这个 compose 里（`docs/kafka-ingest.md` 说明如何连外部 Kafka）。
+- 单机单实例；PostgreSQL、InfluxDB、Kafka 都没有做高可用（Kafka 单节点、副本数 1）。
+- Kafka 是给压测对比准备的单节点；要连外部 Kafka，改后端的 `IOT_KAFKA_BOOTSTRAP`（见 `docs/kafka-ingest.md`）。

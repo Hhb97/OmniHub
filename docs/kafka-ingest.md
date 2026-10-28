@@ -49,5 +49,9 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=localext"
 - **消息格式**：Kafka 中是 JSON 文本 `{"t":"<MQTT topic>","p":"<原始 payload 文本>","r":<后端收到时间 ms>}`，只支持文本 payload。
 - **多实例**：本次没有实现、也没有验证。多个后端实例各自订阅 MQTT 时，每个实例都会收到全部消息，`kafka` 模式下会把同一条消息重复转发进 Kafka；要多实例需要在 EMQX 侧用共享订阅（`$share/组名/iot/+/+/...`）并相应修改订阅主题。
 
+## Docker 部署里的 Kafka
+`docker-compose.yml` 自带一个单节点 Kafka（KRaft，不需要 ZooKeeper，镜像 `apache/kafka:3.9.0`，可用 `KAFKA_IMAGE` 覆盖），**不对外开放端口**，后端用 `kafka:9092` 访问。在主机的 `.env` 里设置 `IOT_INGEST_MODE=kafka`，然后 `docker compose up -d backend` 即可切换，切回 `direct` 同样。为避免压测写满磁盘，保留策略按大小限制：每个分区 256 MB（`KAFKA_RETENTION_BYTES`）、最长 6 小时（`KAFKA_RETENTION_HOURS`）。监控由 kafka-exporter 提供（偏移量、消费积压、分区数、broker 数），看板见 `docs/monitoring.md`。
+
 ## 验证状态
-代码已编译，且 `direct`（默认）模式启动正常。**`kafka` 模式没有连接真实 Kafka 跑过**（编写时没有可用的 Kafka），所以转发、消费、自动建 topic 的行为都未实测；遇到问题请把后端日志发过来。
+- 已验证（Docker 部署、单节点 Kafka）：后端启动后自动创建 8 分区的 topic，8 个消费线程各分配到 1 个分区；向 topic 直接写入 2000 条测试消息，全部被消费（积压 0）、进入 `UplinkProcessor`，并按“设备不存在”被拒绝，Prometheus 和看板里的 Kafka 指标有值。
+- **没有验证**：真实设备经 EMQX → 后端 MQTT 客户端 → **转发到 Kafka** 这一段（需要在平台里建设备后实测），以及 Kafka 模式下的吞吐、延迟与 `direct` 的差异。多实例未实现。

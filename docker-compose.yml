@@ -59,6 +59,40 @@ services:
       timeout: 5s
       retries: 10
 
+  # Single-node Kafka in KRaft mode (no ZooKeeper). Only used when IOT_INGEST_MODE=kafka (docs/kafka-ingest.md).
+  # Not published: the backend and kafka-exporter reach it as kafka:9092 inside the compose network.
+  # Retention is capped by size per partition so a load test cannot fill the disk of a small host.
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:3.9.0}
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_SEGMENT_BYTES: 67108864
+      KAFKA_LOG_RETENTION_BYTES: ${KAFKA_RETENTION_BYTES:-268435456}
+      KAFKA_LOG_RETENTION_HOURS: ${KAFKA_RETENTION_HOURS:-6}
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 60000
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms512m -Xmx1g}
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
   backend:
     build:
       context: .
@@ -68,6 +102,8 @@ services:
       postgres:
         condition: service_healthy
       influxdb:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
       emqx:
         condition: service_started
@@ -96,6 +132,12 @@ services:
       IOT_INFLUX_RETENTION_DAYS: ${IOT_INFLUX_RETENTION_DAYS:-90}
       # throughput settings (see docs/tuning.md); defaults are fine to start with
       IOT_INGEST_MODE: ${IOT_INGEST_MODE:-direct}
+      IOT_KAFKA_BOOTSTRAP: kafka:9092
+      IOT_KAFKA_TOPIC: ${IOT_KAFKA_TOPIC:-iot-uplink}
+      IOT_KAFKA_GROUP: ${IOT_KAFKA_GROUP:-iot-platform}
+      IOT_KAFKA_CONCURRENCY: ${IOT_KAFKA_CONCURRENCY:-8}
+      IOT_KAFKA_PARTITIONS: ${IOT_KAFKA_PARTITIONS:-8}
+      IOT_KAFKA_ACKS: ${IOT_KAFKA_ACKS:-1}
       IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN:?set IOT_METRICS_TOKEN in .env}
       IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-true}
       JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_OPTS:--XX:MaxRAMPercentage=70}
@@ -154,6 +196,16 @@ services:
       postgres:
         condition: service_healthy
 
+  # Kafka topic offsets and consumer-group lag (the broker itself exposes no Prometheus metrics)
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   # Host network on purpose: network and TCP figures must be the host's, not a container's.
   # It listens on :9100 on every interface of the host: restrict it with the firewall to trusted machines.
   node-exporter:
@@ -193,5 +245,6 @@ volumes:
   pgdata:
   influxdata:
   emqxdata:
+  kafkadata:
   promdata:
   grafanadata:

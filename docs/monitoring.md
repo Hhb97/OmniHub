@@ -8,6 +8,7 @@
 EMQX /api/v5/prometheus/stats ─┤
 InfluxDB /metrics ─────────────┼──► Prometheus ──► Grafana（3 个看板）
 postgres-exporter ─────────────┤                    └─ 另有 InfluxDB 数据源（查业务数据）
+kafka-exporter（偏移量/积压）──┤
 node-exporter（主机）──────────┘
 ```
 | 服务 | 作用 | 端口 |
@@ -25,9 +26,9 @@ node-exporter（主机）──────────┘
 - 上行吞吐：按类型（属性/事件/状态/应答）、被拒绝的消息（按原因）、延迟分位数、MQTT 处理线程队列。
 - 批量写入：三个队列（latest/history/message-log）的积压、使用率、丢弃、写入速率、平均每批条数、单批写入 P95 耗时。
 - EMQX 回调：认证/授权的 QPS、P95 延迟、失败（401/5xx）。**连接风暴时先看这里。**
-- Kafka：消费积压（仅 `kafka` 模式有数据）。
+- Kafka（仅 `kafka` 模式有数据）：消费积压、写入/消费速率、broker 数、各分区积压、转发失败丢弃。“消息积压总量”也包含 Kafka 的消费积压。
 
-**② OmniHub · 中间件**：六个采集目标的 UP/DOWN；EMQX（连接数、订阅数、收发速率、连接/断开速率、各类丢弃、认证失败）；PostgreSQL（连接、事务、行写入、缓存命中率、库大小、HikariCP 连接池）；InfluxDB（进程 CPU、内存、goroutines、文件句柄，以及后端写 Influx 的批量耗时）。
+**② OmniHub · 中间件**：七个采集目标的 UP/DOWN；Kafka（broker 数、分区数、消费组成员、topic 内保留的消息数、各分区写入速率和积压）；EMQX（连接数、订阅数、收发速率、连接/断开速率、各类丢弃、认证失败）；PostgreSQL（连接、事务、行写入、缓存命中率、库大小、HikariCP 连接池）；InfluxDB（进程 CPU、内存、goroutines、文件句柄，以及后端写 Influx 的批量耗时）。
 
 **③ OmniHub · 系统与 JVM**：主机 CPU/内存/负载/磁盘/网络/TCP 连接与 TIME_WAIT/文件句柄；后端堆内存、GC、线程、Tomcat 忙线程、HTTP 请求速率与延迟。
 
@@ -38,7 +39,7 @@ node-exporter（主机）──────────┘
 |---|---|---|
 | EMQX → 后端 | EMQX 看板里的“丢弃消息 / 投递队列满” | 平台只用一个 MQTT 连接订阅全部上行，后端消费不过来时 EMQX 会丢弃，**这种积压是看不到队列长度的，只能看丢弃数** |
 | 后端处理线程 | `iot_lane_queue_pending`、`iot_lane_queue_max` | direct 模式；最满的那条线程接近 20000 就会拖慢接收 |
-| Kafka | `kafka_consumer…records_lag_max` | kafka 模式；消费者落后多少条 |
+| Kafka | `kafka_consumergroup_lag{topic="iot-uplink"}`（kafka-exporter） | kafka 模式；消费组落后多少条，已实测可用。后端客户端指标 `kafka_consumer…records_lag_max` 作补充 |
 | 批量写队列 | `iot_batch_queue_pending{queue}` | 等待写入 PG/Influx 的条数，最常见的积压位置 |
 | 丢失 | `iot_batch_queue_dropped_total`、`iot_ingest_forward_dropped_total` | 队列满、写失败、转发 Kafka 失败；**应为 0** |
 
