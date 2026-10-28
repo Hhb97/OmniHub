@@ -5,6 +5,7 @@ import com.omnihub.iot.common.ShardedBatchQueue;
 import com.omnihub.iot.common.BizException;
 import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.common.PageResult;
+import com.omnihub.iot.config.IngestDb;
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.Device;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
@@ -25,6 +26,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +78,8 @@ public class TelemetryService {
     }
 
     private final JdbcTemplate jdbc;
+    /** Ingestion writes go through their own pool, so a burst of page queries cannot starve the batch writers. */
+    private final JdbcTemplate writeJdbc;
     private final ThingModelService thingModels;
     private final DeviceService deviceService;
     private final ConfigService config;
@@ -83,16 +90,49 @@ public class TelemetryService {
     private final ShardedBatchQueue<HistoryStore.Sample> latestWriter;
     private final ShardedBatchQueue<HistoryStore.Sample> historyWriter;
 
-    public TelemetryService(JdbcTemplate jdbc, ThingModelService thingModels, DeviceService deviceService,
-            ConfigService config, ApplicationEventPublisher events, HistoryStore history, IotProperties props,
-            io.micrometer.core.instrument.MeterRegistry meters) {
+    /**
+     * "Latest value" is a sampling view, not an audit log: writing one row per property report is the most expensive
+     * part of ingestion. These two maps coalesce writes of the same (device, property) to at most one per
+     * {@code iot.ingest.latest-min-interval-ms}; a trailing flush makes sure the newest value is written anyway.
+     * 0 disables the throttling (every sample is written).
+     */
+    private static final int LATEST_KEYS_MAX = 1_000_000;
+    private static final int LATEST_PENDING_MAX = 500_000;
+    private final long latestMinIntervalMs;
+    private final Map<String, Long> latestWrittenAt = new ConcurrentHashMap<>();
+    private final Map<String, HistoryStore.Sample> latestPending = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService latestFlusher;
+
+    public TelemetryService(JdbcTemplate jdbc, IngestDb ingestDb, ThingModelService thingModels,
+            DeviceService deviceService, ConfigService config, ApplicationEventPublisher events, HistoryStore history,
+            IotProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
+        this.jdbc = jdbc;
+        this.writeJdbc = ingestDb.jdbc();
         this.history = history;
         IotProperties.Batch b = props.getIngest().getBatch();
         this.latestWriter = new ShardedBatchQueue<HistoryStore.Sample>("latest", b.getWorkers(), b.getQueueCapacity(),
                 b.getMaxBatch(), 100, s -> s.deviceId(), this::flushLatest).bind(meters);
         this.historyWriter = new ShardedBatchQueue<HistoryStore.Sample>("history", b.getHistoryWorkers(),
                 b.getQueueCapacity(), b.getHistoryMaxBatch(), 100, s -> s.deviceId(), this::flushHistory).bind(meters);
-        this.jdbc = jdbc;
+        this.latestMinIntervalMs = Math.max(0, props.getIngest().getLatestMinIntervalMs());
+        if (latestMinIntervalMs > 0) {
+            long period = Math.max(100, latestMinIntervalMs / 2);
+            this.latestFlusher = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "latest-coalesce");
+                t.setDaemon(true);
+                return t;
+            });
+            latestFlusher.scheduleWithFixedDelay(() -> {
+                try {
+                    flushPendingLatest(false);
+                } catch (Exception e) {
+                    // an exception would silently cancel all further executions of a scheduled task
+                    log.warn("Flushing pending latest values failed: {}", e.toString());
+                }
+            }, period, period, TimeUnit.MILLISECONDS);
+        } else {
+            this.latestFlusher = null;
+        }
         this.thingModels = thingModels;
         this.deviceService = deviceService;
         this.config = config;
@@ -129,9 +169,55 @@ public class TelemetryService {
     private void persist(Long deviceId, Map<String, JsonNode> values, Instant ts) {
         for (Map.Entry<String, JsonNode> e : values.entrySet()) {
             HistoryStore.Sample sample = new HistoryStore.Sample(deviceId, e.getKey(), e.getValue(), ts);
-            latestWriter.offer(sample);
             historyWriter.offer(sample);
+            offerLatest(sample);
         }
+    }
+
+    /**
+     * Latest values are sampled: at most one write per (device, property) per interval. Skipped samples are kept in
+     * {@link #latestPending} (newest wins) and written by the trailing flush, so the stored value never stays behind
+     * by more than the interval.
+     */
+    private void offerLatest(HistoryStore.Sample sample) {
+        if (latestMinIntervalMs <= 0 || latestPending.size() > LATEST_PENDING_MAX) {
+            latestWriter.offer(sample);
+            return;
+        }
+        String key = sample.deviceId() + ":" + sample.identifier();
+        long now = System.currentTimeMillis();
+        Long last = latestWrittenAt.get(key);
+        if (last == null || now - last >= latestMinIntervalMs) {
+            rememberWrite(key, now);
+            latestWriter.offer(sample);
+        } else {
+            latestPending.put(key, sample);
+        }
+    }
+
+    /** @param force true at shutdown: write everything that is still pending */
+    private void flushPendingLatest(boolean force) {
+        if (latestPending.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, HistoryStore.Sample> e : latestPending.entrySet()) {
+            Long last = latestWrittenAt.get(e.getKey());
+            if (!force && last != null && now - last < latestMinIntervalMs) {
+                continue;
+            }
+            if (latestPending.remove(e.getKey(), e.getValue())) {
+                rememberWrite(e.getKey(), now);
+                latestWriter.offer(e.getValue());
+            }
+        }
+    }
+
+    private void rememberWrite(String key, long now) {
+        if (latestWrittenAt.size() > LATEST_KEYS_MAX) {
+            latestWrittenAt.clear(); // a deleted device's keys must not accumulate forever
+        }
+        latestWrittenAt.put(key, now);
     }
 
     public long droppedWrites() {
@@ -140,6 +226,10 @@ public class TelemetryService {
 
     @PreDestroy
     void close() {
+        if (latestFlusher != null) {
+            latestFlusher.shutdownNow();
+        }
+        flushPendingLatest(true);
         latestWriter.close();
         historyWriter.close();
     }
@@ -187,7 +277,7 @@ public class TelemetryService {
                 ts[i] = Timestamp.from(x.ts());
             }
             // a late (out-of-order) report never overwrites a newer latest value
-            jdbc.execute((ConnectionCallback<Void>) con -> {
+            writeJdbc.execute((ConnectionCallback<Void>) con -> {
                 try (PreparedStatement ps = con.prepareStatement("""
                         INSERT INTO iot_device_latest (device_id, identifier, value, reported_at)
                         SELECT d, i, v::jsonb, t FROM unnest(?::bigint[], ?::varchar[], ?::text[], ?::timestamptz[]) AS x(d, i, v, t)
@@ -210,7 +300,7 @@ public class TelemetryService {
         if (def == null) {
             return "物模型中未定义该事件";
         }
-        jdbc.update("""
+        writeJdbc.update("""
                 INSERT INTO iot_device_event (device_id, identifier, name, level, params, ts)
                 VALUES (?, ?, ?, ?, ?::jsonb, ?)""", ref.id(), identifier, def.name(), def.level(),
                 params == null ? null : Jsons.toJson(params), Timestamp.from(ts));
@@ -321,13 +411,36 @@ public class TelemetryService {
             int histDays = config.getInt("retention.history.days", 90);
             int msgDays = config.getInt("retention.message-log.days", 7);
             history.purgeOlderThan(histDays);
-            int m = jdbc.update("DELETE FROM iot_device_message_log WHERE created_at < now() - make_interval(days => ?)",
-                    msgDays);
-            int e = jdbc.update("DELETE FROM iot_device_event WHERE ts < now() - make_interval(days => ?)", histDays);
+            int m = deleteInChunks("iot_device_message_log",
+                    "created_at < now() - make_interval(days => ?)", msgDays);
+            int e = deleteInChunks("iot_device_event", "ts < now() - make_interval(days => ?)", histDays);
             log.info("Retention purge removed {} message logs and {} events (history store: {})", m, e,
                     history.getClass().getSimpleName());
         } catch (Exception ex) {
             log.warn("Retention purge failed: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * Deletes in chunks instead of one huge statement: a single DELETE over months of rows holds locks and generates
+     * one enormous vacuum backlog, which is what makes an unpartitioned table stall the write path. The table and
+     * condition are constants, never user input.
+     */
+    private int deleteInChunks(String table, String where, int days) {
+        int total = 0;
+        while (true) {
+            int n = jdbc.update("DELETE FROM " + table + " WHERE ctid IN (SELECT ctid FROM " + table + " WHERE "
+                    + where + " LIMIT 10000)", days);
+            total += n;
+            if (n < 10000) {
+                return total;
+            }
+            try {
+                Thread.sleep(50); // give autovacuum and readers a chance between chunks
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return total;
+            }
         }
     }
 

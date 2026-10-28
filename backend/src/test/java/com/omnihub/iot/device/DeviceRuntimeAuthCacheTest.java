@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.omnihub.iot.config.IngestDb;
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.product.ProductMapper;
@@ -35,8 +36,10 @@ class DeviceRuntimeAuthCacheTest {
     void setUp() {
         String salt = DeviceCredentials.newSalt();
         ref = new DeviceRef(7L, 1L, 3L, "pk", "dk", "dev", true, true, DeviceCredentials.hash(salt, SECRET), salt);
-        runtime = new DeviceRuntime(jdbc, mock(DeviceMapper.class), mock(ProductMapper.class), mock(ConfigService.class),
-                mock(ApplicationEventPublisher.class), props);
+        IngestDb ingestDb = mock(IngestDb.class);
+        when(ingestDb.jdbc()).thenReturn(jdbc);
+        runtime = new DeviceRuntime(ingestDb, mock(DeviceMapper.class), mock(ProductMapper.class),
+                mock(ConfigService.class), mock(ApplicationEventPublisher.class), props);
     }
 
     @SuppressWarnings("unchecked")

@@ -16,6 +16,12 @@ server:
 spring:
   application:
     name: iot-backend
+  task:
+    scheduling:
+      # one thread for every @Scheduled job: a slow job (retention purge, business metrics) would delay the
+      # device offline sweep and the last-comm flush, which both sit on the ingestion side
+      pool:
+        size: ${IOT_SCHEDULER_THREADS:4}
   datasource:
     # stringtype=unspecified lets plain Strings be written into JSONB columns
     url: ${IOT_DB_URL:jdbc:postgresql://localhost:5432/iot?stringtype=unspecified}
@@ -130,6 +136,17 @@ iot:
     mode: ${IOT_INGEST_MODE:direct}
     lanes: ${IOT_INGEST_LANES:0}
     lane-queue: ${IOT_INGEST_LANE_QUEUE:20000}
+    # block (default): a full lane makes the MQTT callback wait (nothing lost, back-pressure towards the broker)
+    # drop: drop and count the message instead (iot_ingest_lane_dropped_total) so the broker connection stays fast
+    lane-overflow: ${IOT_LANE_OVERFLOW:block}
+    # write the "latest value" of one device property at most this often (ms; trailing flush keeps it current).
+    # 0 = write every report. This single table was the largest write amplification of ingestion.
+    latest-min-interval-ms: ${IOT_LATEST_MIN_INTERVAL_MS:1000}
+    # separate connection pool for all ingestion writes; the main pool is left to the HTTP/API requests.
+    # 0 = share the main pool (previous behaviour)
+    db-pool: ${IOT_INGEST_DB_POOL:12}
+    # a batch writer waits this long for a connection before it gives up and counts the batch as dropped
+    db-timeout-ms: ${IOT_INGEST_DB_TIMEOUT_MS:2000}
     batch:
       queue-capacity: ${IOT_BATCH_QUEUE:200000}
       max-batch: ${IOT_BATCH_MAX:2000}
@@ -152,6 +169,21 @@ iot:
     auth-cache-warmup: ${IOT_AUTH_CACHE_WARMUP:true}
     auth-cache-refresh-seconds: ${IOT_AUTH_CACHE_REFRESH_SECONDS:300}
     auth-cache-max: ${IOT_AUTH_CACHE_MAX:200000}
+  alarm:
+    # rules are evaluated on a dedicated worker, never on the MQTT lane (see AlarmEngine)
+    rule-refresh-seconds: ${IOT_ALARM_RULE_REFRESH_SECONDS:30}
+    # when the worker falls behind, evaluations are dropped and counted (iot_alarm_eval_dropped_total)
+    queue-capacity: ${IOT_ALARM_QUEUE_CAPACITY:50000}
+    # trigger_count / last_triggered_at of ACTIVE alarms are merged and written this often (ms)
+    flush-ms: ${IOT_ALARM_FLUSH_MS:1000}
+  ws:
+    # WebSocket writes happen on this pool; a slow browser must not slow the ingestion lanes
+    sender-threads: ${IOT_WS_SENDER_THREADS:2}
+    queue-capacity: ${IOT_WS_QUEUE_CAPACITY:20000}
+    # property pushes of one device are merged within this window (ms); 0 = push every message
+    coalesce-millis: ${IOT_WS_COALESCE_MILLIS:200}
+  # how long the dashboard aggregates (overview / trend / top devices) are cached, in seconds; 0 = always read
+  dashboard-cache-seconds: ${IOT_DASHBOARD_CACHE_SECONDS:10}
   embedded-postgres:
     enabled: false
     port: 15432

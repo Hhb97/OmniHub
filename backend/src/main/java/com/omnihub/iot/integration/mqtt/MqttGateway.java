@@ -51,6 +51,11 @@ public class MqttGateway implements DownlinkPublisher {
         this.processor = processor;
         int laneCount = props.getIngest().getLanes() > 0 ? props.getIngest().getLanes()
                 : Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
+        boolean dropWhenFull = "drop".equalsIgnoreCase(props.getIngest().getLaneOverflow());
+        io.micrometer.core.instrument.Counter laneDropped = io.micrometer.core.instrument.Counter
+                .builder("iot_ingest_lane_dropped_total")
+                .description("Uplink messages dropped because every lane queue was full (lane-overflow=drop)")
+                .register(meters);
         this.lanes = new ThreadPoolExecutor[laneCount];
         for (int i = 0; i < laneCount; i++) {
             int n = i;
@@ -58,7 +63,15 @@ public class MqttGateway implements DownlinkPublisher {
                 Thread t = new Thread(r, "mqtt-lane-" + n);
                 t.setDaemon(true);
                 return t;
-            }, new ThreadPoolExecutor.CallerRunsPolicy());
+            }, (r, executor) -> {
+                if (dropWhenFull) {
+                    // keep the broker connection and the Paho callback healthy; the loss is visible as a metric
+                    laneDropped.increment();
+                    return;
+                }
+                // default: back-pressure towards the broker (a message is never lost inside the JVM)
+                r.run();
+            });
         }
         io.micrometer.core.instrument.Gauge.builder("iot_lane_queue_pending", lanes,
                 l -> java.util.Arrays.stream(l).mapToInt(x -> x.getQueue().size()).sum())

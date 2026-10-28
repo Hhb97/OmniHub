@@ -182,6 +182,26 @@ services:
       IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN:?set IOT_METRICS_TOKEN in .env}
       IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-true}
       IOT_DB_POOL: ${IOT_DB_POOL:-40}
+      # Ingestion writes take connections from their own pool, so a dashboard query or a page request can never
+      # take the connection a batch writer needs (see docs/tuning.md). 0 = share IOT_DB_POOL.
+      IOT_INGEST_DB_POOL: ${IOT_INGEST_DB_POOL:-12}
+      # a batch writer gives up (and counts the batch as dropped) after waiting this long for a connection
+      IOT_INGEST_DB_TIMEOUT_MS: ${IOT_INGEST_DB_TIMEOUT_MS:-2000}
+      # at most one "latest value" write per device property and interval; 0 = write every report
+      IOT_LATEST_MIN_INTERVAL_MS: ${IOT_LATEST_MIN_INTERVAL_MS:-1000}
+      # full processing lane: block = back-pressure (lossless), drop = drop and count (iot_ingest_lane_dropped_total)
+      IOT_LANE_OVERFLOW: ${IOT_LANE_OVERFLOW:-block}
+      # alarm evaluation worker (rules in memory, trigger counters merged once per flush)
+      IOT_ALARM_RULE_REFRESH_SECONDS: ${IOT_ALARM_RULE_REFRESH_SECONDS:-30}
+      IOT_ALARM_QUEUE_CAPACITY: ${IOT_ALARM_QUEUE_CAPACITY:-50000}
+      IOT_ALARM_FLUSH_MS: ${IOT_ALARM_FLUSH_MS:-1000}
+      # WebSocket pushes are serialised and written on their own pool, merged per device
+      IOT_WS_SENDER_THREADS: ${IOT_WS_SENDER_THREADS:-2}
+      IOT_WS_QUEUE_CAPACITY: ${IOT_WS_QUEUE_CAPACITY:-20000}
+      IOT_WS_COALESCE_MILLIS: ${IOT_WS_COALESCE_MILLIS:-200}
+      # dashboard aggregate cache (seconds); every open browser tab polls these queries
+      IOT_DASHBOARD_CACHE_SECONDS: ${IOT_DASHBOARD_CACHE_SECONDS:-10}
+      IOT_SCHEDULER_THREADS: ${IOT_SCHEDULER_THREADS:-4}
       IOT_BATCH_WORKERS: ${IOT_BATCH_WORKERS:-4}
       IOT_BATCH_HISTORY_WORKERS: ${IOT_BATCH_HISTORY_WORKERS:-2}
       IOT_BATCH_LOG_WORKERS: ${IOT_BATCH_LOG_WORKERS:-2}

@@ -40,7 +40,7 @@ public class WsPublisher {
     @EventListener
     public void onStatus(DeviceStatusEvent e) {
         guard(() -> {
-            hub.pushToDevice(e.deviceId(), Map.of("type", "status", "deviceId", e.deviceId(), "ts",
+            hub.pushToDeviceNow(e.deviceId(), Map.of("type", "status", "deviceId", e.deviceId(), "ts",
                     e.at().toEpochMilli(), "onlineStatus", e.onlineStatus()));
             hub.signalDashboard(e.tenantId());
         });
@@ -58,20 +58,20 @@ public class WsPublisher {
             if (e.params() != null) {
                 m.put("params", e.params());
             }
-            hub.pushToDevice(e.deviceId(), m);
+            hub.pushToDeviceNow(e.deviceId(), m);
         });
     }
 
     @EventListener
     public void onCommand(CommandChangedEvent e) {
-        guard(() -> hub.pushToDevice(e.command().deviceId(),
+        guard(() -> hub.pushToDeviceNow(e.command().deviceId(),
                 Map.of("type", "command", "deviceId", e.command().deviceId(), "command", e.command())));
     }
 
     @EventListener
     public void onAlarm(AlarmChangedEvent e) {
         guard(() -> {
-            hub.pushToDevice(e.alarm().deviceId(),
+            hub.pushToDeviceNow(e.alarm().deviceId(),
                     Map.of("type", "alarm", "deviceId", e.alarm().deviceId(), "alarm", e.alarm()));
             hub.signalDashboard(e.tenantId());
         });

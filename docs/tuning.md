@@ -108,5 +108,61 @@
 
 ## 7. 仍然存在的限制
 - 平台只用**一个** MQTT 连接订阅全部上行，EMQX 对 QoS1 单个订阅者有 inflight 窗口（默认 32）。网络往返较大时这会成为上限：可把 `IOT_MQTT_SUBSCRIBE_QOS=0` 试验，或后续改成多连接的共享订阅（`$share/组/…`，需要 EMQX 端配合保证同设备有序，本次没有做）。
-- 通信记录仍是“每条消息一行”，量很大时表增长很快；清理由每日任务按保留天数删除。
+- 通信记录仍是“每条消息一行”，量很大时表增长很快；清理由每日任务按保留天数**分批**删除（每批 1 万行）。
 - 单实例设计：队列、去重缓存、告警连续计数都在内存里。
+
+## 8. 本轮改动：把“每条消息的写库”和同步副作用移出处理线程
+ 
+第 5a / 5b 节的实测（约 4300 条/秒时 PG 每秒 2.5 万行更新、连接池打满、`latest` 单线程约 2.4 万行/秒、EMQX 在 3000～7000 条/秒开始丢投递）说明瓶颈不是 MQTT 收包，而是**每条消息在后端放大的写库次数**，以及**在 MQTT 处理线程上同步做的副作用**（告警 UPDATE、WebSocket 序列化与 socket 写）。这一轮的改动都围绕这两点，没有新增基础设施。
+ 
+| # | 之前 | 现在 | 关闭新行为 |
+|---|---|---|---|
+| 1 最新值 | 每条属性上报 upsert 一行 | 同一设备的同一属性**每 `IOT_LATEST_MIN_INTERVAL_MS` 最多写一次**；跳过的样本留在内存（只留最新值），由后台尾部补偿写入，最多滞后一个间隔 | `IOT_LATEST_MIN_INTERVAL_MS=0` |
+| 2 连接池 | 写入、HTTP、看板查询共用 `IOT_DB_POOL` | 新增独立 `ingest` 池（`IOT_INGEST_DB_POOL`，默认 12），批量写入 / 最新值 / 历史 / 通信记录 / 最后通信时间 / 告警评估都走它；主池留给 HTTP。慢查询再也不能抢走写入线程的连接 | `IOT_INGEST_DB_POOL=0`（共用主池） |
+| 3 告警 | 每条上报在每个 MQTT 线程上查规则、可能 UPDATE `alarm_record` | 规则常驻内存（按设备/产品索引，默认 30 秒刷新一次，改规则后立即重载）；评估在**单工作线程**上排队；`trigger_count` / `last_triggered_at` 在内存累加、**每秒合并成一条 `UPDATE … FROM unnest(...)`**；没有 ACTIVE 告警时的恢复判断不发 SQL；设备没有规则时零开销（不查库、不分配） | `IOT_ALARM_FLUSH_MS` 调小不回到旧行为；旧行为是每条消息一次 UPDATE |
+| 4 WebSocket | 在 MQTT 线程上序列化 JSON，并在 `synchronized(session)` 里同步写 socket（慢浏览器会拖住处理线程） | 交给 `ws-send` 小线程池；同一设备的属性推送在 `IOT_WS_COALESCE_MILLIS`（默认 200ms）窗口内**只发最新一条**；状态/事件/命令/告警走“立即”通道不合并；队列满则丢弃并计数，绝不阻塞 ingest | `IOT_WS_COALESCE_MILLIS=0`（每条都推） |
+| 5 看板 | 每次请求都扫 `iot_device_message_log`（一天几百万行），每个打开的浏览器标签各扫一遍 | 聚合结果按 租户+时间桶+参数 缓存 `IOT_DASHBOARD_CACHE_SECONDS`（默认 10 秒）；`recentDevices` 不缓存 | `IOT_DASHBOARD_CACHE_SECONDS=0` |
+| 6 定时任务 | 所有 `@Scheduled` 共用一个线程，清理/业务指标变慢就推迟离线扫描和最后通信时间落库 | `IOT_SCHEDULER_THREADS`（默认 4） | 设 1 |
+| 7 保留期清理 | 一条 DELETE 删几个月的数据（长锁 + 巨大 vacuum 积压） | 每批 1 万行、批间 50ms，历史表与事件表同理 | — |
+| 8 处理队列满 | 固定 `CallerRunsPolicy`（回到 Paho 回调线程，压 broker） | 默认仍是 block（不丢消息）；`IOT_LANE_OVERFLOW=drop` 改为丢弃并计入 `iot_ingest_lane_dropped_total`，保证 broker 连接不被拖垮 | 默认即旧行为 |
+
+新增的环境变量（`docker-compose.yml` 已透传，默认值与代码一致）：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `IOT_LATEST_MIN_INTERVAL_MS` | 1000 | 同一设备同一属性的最新值最小写入间隔（ms）；0 = 每条都写 |
+| `IOT_INGEST_DB_POOL` | 12 | ingest 专用连接池大小；0 = 共用 `IOT_DB_POOL` |
+| `IOT_INGEST_DB_TIMEOUT_MS` | 2000 | 批量写入等连接的上限，超时按丢弃处理并计数 |
+| `IOT_ALARM_RULE_REFRESH_SECONDS` | 30 | 规则内存索引刷新周期 |
+| `IOT_ALARM_QUEUE_CAPACITY` | 50000 | 告警评估队列容量（满了丢弃评估） |
+| `IOT_ALARM_FLUSH_MS` | 1000 | `trigger_count` 合并落库周期（ms） |
+| `IOT_WS_SENDER_THREADS` / `IOT_WS_QUEUE_CAPACITY` | 2 / 20000 | WebSocket 发送线程数与队列 |
+| `IOT_WS_COALESCE_MILLIS` | 200 | 同设备属性推送合并窗口（ms）；0 = 每条都推 |
+| `IOT_DASHBOARD_CACHE_SECONDS` | 10 | 看板聚合缓存时间；0 = 每次查询 |
+| `IOT_SCHEDULER_THREADS` | 4 | `spring.task.scheduling.pool.size` |
+| `IOT_LANE_OVERFLOW` | block | 处理队列满时：block（背压）/ drop（丢弃并计数） |
+ 
+### 8.1 行为变化（请知悉）
+- **最新值最多滞后约 1 秒**（尾部补偿保证最后一条一定落库）。最新值是"当前快照"，不是审计数据；历史库不受影响（仍然每条都写）。
+- **告警连续触发计数与 ACTIVE 集合在内存里**：进程重启后 `consecutive` 归零（需要连续 N 次的规则重新计数），ACTIVE 告警在启动时从库里恢复。`trigger_count` 落库最多滞后 `IOT_ALARM_FLUSH_MS`（默认 1 秒）。
+- **告警评估队列满时会丢弃评估**而不是阻塞 ingest，丢弃数量见 `iot_alarm_eval_dropped_total`。默认容量 5 万，正常负载下不会触发。
+- **WebSocket 属性推送会合并**：200ms 内同一设备的多次属性上报，前端只收到最后一条（`type=property`）；状态、事件、命令、告警不合并。
+- **看板数字最多滞后 10 秒**。
+ 
+### 8.2 新增指标
+| 指标 | 含义 |
+|---|---|
+| `iot_alarm_eval_queue_pending` | 等待评估的告警事件数 |
+| `iot_alarm_eval_dropped_total` | 因工作线程跟不上而丢弃的评估数（>0 说明该调大 `IOT_ALARM_QUEUE_CAPACITY` 或减少规则/设备数） |
+| `iot_ws_push_pending` | 等待写出的 WebSocket 推送数 |
+| `iot_ws_push_dropped_total` | 因发送队列满而丢的推送数（>0 说明有很慢的客户端） |
+| `iot_ingest_lane_dropped_total` | `IOT_LANE_OVERFLOW=drop` 时丢弃的上行消息数 |
+ 
+### 8.3 怎么看有没有效果
+1. 压测同时记录：后端 `iot_ingest_*` / `iot_batch_queue_*` 指标、PG 的 `pg_stat_database.xact_commit` 与 `pg_stat_user_tables.n_tup_upd`、`dmesg`/负载。
+2. 关键判据：同样 TPS 下 **PG 每秒行更新数应明显下降**（最新值采样 + 告警合并），**连接池等待时间应接近 0**（`hikaricp_connections_pending`、`hikaricp_connections_acquire_seconds`），`iot_lane_queue_pending` 不再持续增长。
+3. 如果 `iot_alarm_eval_dropped_total` 或 `iot_ws_push_dropped_total` 持续增长，说明相应队列太小或消费端太慢，而不是数据库问题。
+4. `IOT_LATEST_MIN_INTERVAL_MS` 调到 5000 能进一步减少写入，但"当前值"最多滞后 5 秒；看板上看到的当前值会相应变旧。
+ 
+### 8.4 回归测试
+`backend` 下 `mvn test`：125 项全部通过（含 `DeviceFlowIntegrationTest` 8 项：上报 → 最新值/历史 → 告警触发与恢复 → 看板概览）。本轮没有做真实压测，上面仍不给吞吐数字。

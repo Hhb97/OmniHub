@@ -16,9 +16,13 @@ public class IotProperties {
     private Device device = new Device();
     private History history = new History();
     private Ingest ingest = new Ingest();
+    private Alarm alarm = new Alarm();
+    private Ws ws = new Ws();
     private Metrics metrics = new Metrics();
     private Influxdb influxdb = new Influxdb();
     private EmbeddedPostgres embeddedPostgres = new EmbeddedPostgres();
+    /** How long the dashboard aggregates (overview / trend / top devices) are cached, in seconds. 0 = always read. */
+    private int dashboardCacheSeconds = 10;
 
     @Data
     public static class Security {
@@ -79,7 +83,41 @@ public class IotProperties {
         /** single-threaded MQTT processing lanes (per-device ordering); 0 = max(8, 2 x CPU cores) */
         private int lanes = 0;
         private int laneQueue = 20000;
+        /**
+         * What to do when a lane queue is full: block = process on the Paho callback thread (back-pressure towards the
+         * broker, no message lost); drop = drop the message and count it (the broker connection stays healthy).
+         */
+        private String laneOverflow = "block";
+        /**
+         * Maximum rate at which the "latest value" of one device property is written to PostgreSQL, in milliseconds.
+         * The newest sample is always written eventually (trailing flush); 0 writes every sample.
+         */
+        private int latestMinIntervalMs = 1000;
+        /** size of the dedicated ingestion connection pool; 0 = share the main pool */
+        private int dbPool = 12;
+        /** wait for a connection at most this long before a batch is given up (ms) */
+        private int dbTimeoutMs = 2000;
         private Batch batch = new Batch();
+    }
+
+    /** Alarm evaluation runs off the MQTT threads (see AlarmEngine). */
+    @Data
+    public static class Alarm {
+        /** how often the enabled rules are reloaded into memory */
+        private int ruleRefreshSeconds = 30;
+        /** max queued evaluations; when full, evaluations are dropped and counted (ingest never waits) */
+        private int queueCapacity = 50000;
+        /** trigger_count / last_triggered_at updates are coalesced and written at most this often (ms) */
+        private int flushMs = 1000;
+    }
+
+    /** WebSocket push: serialisation and socket writes never happen on the ingestion threads. */
+    @Data
+    public static class Ws {
+        private int senderThreads = 2;
+        private int queueCapacity = 20000;
+        /** property pushes of one device are merged within this window (ms); 0 pushes every message */
+        private int coalesceMillis = 200;
     }
 
     /** Background batch writer settings (message log, latest values, history, device last-communication time). */

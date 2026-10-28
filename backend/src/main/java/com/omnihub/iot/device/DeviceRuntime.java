@@ -1,5 +1,6 @@
 package com.omnihub.iot.device;
 
+import com.omnihub.iot.config.IngestDb;
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.product.Product;
 import com.omnihub.iot.product.ProductMapper;
@@ -66,9 +67,9 @@ public class DeviceRuntime {
             FROM iot_device d JOIN iot_product p ON p.id = d.product_id
             WHERE d.deleted = 0 AND p.deleted = 0""";
 
-    public DeviceRuntime(JdbcTemplate jdbc, DeviceMapper deviceMapper, ProductMapper productMapper,
+    public DeviceRuntime(IngestDb ingestDb, DeviceMapper deviceMapper, ProductMapper productMapper,
             ConfigService config, ApplicationEventPublisher events, IotProperties props) {
-        this.jdbc = jdbc;
+        this.jdbc = ingestDb.jdbc();
         this.deviceMapper = deviceMapper;
         this.productMapper = productMapper;
         this.config = config;
@@ -287,7 +288,9 @@ public class DeviceRuntime {
                     return null;
                 });
             }
-            snapshot.forEach(commAt::remove); // keep entries that were refreshed while writing
+            // only drop the entries whose value is still the timestamp that was just written: a message that arrived
+            // while the statement was running keeps its (newer) timestamp for the next flush
+            snapshot.forEach((id, at) -> commAt.remove(id, at));
         } catch (Exception e) {
             log.warn("Flushing device last-communication times failed: {}", e.getMessage());
         }

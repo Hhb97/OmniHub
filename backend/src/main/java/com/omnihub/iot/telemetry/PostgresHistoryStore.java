@@ -2,6 +2,7 @@ package com.omnihub.iot.telemetry;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.common.Jsons;
+import com.omnihub.iot.config.IngestDb;
 import com.omnihub.iot.thingmodel.ValueValidator;
 import java.sql.PreparedStatement;
 import java.sql.Timestamp;
@@ -21,9 +22,11 @@ import org.springframework.stereotype.Component;
 public class PostgresHistoryStore implements HistoryStore {
 
     private final JdbcTemplate jdbc;
+    private final JdbcTemplate writeJdbc;
 
-    public PostgresHistoryStore(JdbcTemplate jdbc) {
+    public PostgresHistoryStore(JdbcTemplate jdbc, IngestDb ingestDb) {
         this.jdbc = jdbc;
+        this.writeJdbc = ingestDb.jdbc();
     }
 
     private static final int CHUNK = 5000;
@@ -47,7 +50,7 @@ public class PostgresHistoryStore implements HistoryStore {
                 json[i] = Jsons.toJson(x.value());
                 ts[i] = Timestamp.from(x.ts());
             }
-            jdbc.execute((ConnectionCallback<Void>) con -> {
+            writeJdbc.execute((ConnectionCallback<Void>) con -> {
                 try (PreparedStatement ps = con.prepareStatement("""
                         INSERT INTO iot_device_property_history (device_id, identifier, num_value, value, ts)
                         SELECT d, i, n, v::jsonb, t
@@ -110,6 +113,21 @@ public class PostgresHistoryStore implements HistoryStore {
 
     @Override
     public void purgeOlderThan(int days) {
-        jdbc.update("DELETE FROM iot_device_property_history WHERE ts < now() - make_interval(days => ?)", days);
+        // chunked: one DELETE over months of rows is a long lock plus a huge vacuum backlog
+        while (true) {
+            int n = jdbc.update("""
+                    DELETE FROM iot_device_property_history WHERE ctid IN (
+                        SELECT ctid FROM iot_device_property_history
+                        WHERE ts < now() - make_interval(days => ?) LIMIT 10000)""", days);
+            if (n < 10000) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 }

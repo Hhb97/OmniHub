@@ -18,10 +18,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-/** All dashboard numbers are computed from stored business data on every request; nothing is cached or fixed. */
+/** Dashboard numbers are read from the database; expensive aggregates are cached for a few seconds (see below). */
 @Service
 public class DashboardService {
 
@@ -45,18 +47,64 @@ public class DashboardService {
     }
 
     private static final List<String> LEVELS = List.of("CRITICAL", "MAJOR", "WARNING", "INFO");
+    /** Upper bound of cached answers; keys are tenant + time bucket + parameters, so this is only a safety net. */
+    private static final int CACHE_MAX = 512;
+
+    private record Cached(Object value, long expiresAt) {
+    }
 
     private final JdbcTemplate jdbc;
     private final DeviceService deviceService;
     private final ZoneId zone;
+    private final long cacheMillis;
+    private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
     public DashboardService(JdbcTemplate jdbc, DeviceService deviceService, IotProperties props) {
         this.jdbc = jdbc;
         this.deviceService = deviceService;
         this.zone = ZoneId.of(props.getDashboardZone());
+        this.cacheMillis = Math.max(0, props.getDashboardCacheSeconds()) * 1000L;
+    }
+
+    /**
+     * Runs {@code loader} at most once per key and window. The dashboard is polled by every open browser tab and its
+     * counts scan iot_device_message_log (millions of rows per day); without a cache a handful of open dashboards kept
+     * the database busy for exactly the rows ingestion was trying to write. After the window the value is recomputed -
+     * a slightly stale number is fine here, the timestamp of the data does not change.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> T cached(String key, Supplier<T> loader) {
+        if (cacheMillis <= 0) {
+            return loader.get();
+        }
+        long now = System.currentTimeMillis();
+        Cached hit = cache.get(key);
+        if (hit != null && hit.expiresAt() > now) {
+            return (T) hit.value();
+        }
+        T value = loader.get();
+        if (cache.size() >= CACHE_MAX) {
+            cache.clear();
+        }
+        cache.put(key, new Cached(value, System.currentTimeMillis() + cacheMillis));
+        return value;
+    }
+
+    /** tenant + day/hour: a cached answer must never leak into the next day's numbers. */
+    private String key(Object... parts) {
+        StringBuilder sb = new StringBuilder().append(CurrentUser.tenantId());
+        for (Object p : parts) {
+            sb.append(':').append(p);
+        }
+        return sb.toString();
     }
 
     public Overview overview() {
+        String day = LocalDate.now(zone).toString();
+        return cached(key("overview", day), () -> loadOverview());
+    }
+
+    private Overview loadOverview() {
         Long tenant = CurrentUser.tenantId();
         Timestamp today = Timestamp.from(ZonedDateTime.now(zone).truncatedTo(ChronoUnit.DAYS).toInstant());
         long products = count("SELECT count(*) FROM iot_product WHERE tenant_id = ? AND deleted = 0", tenant);
@@ -86,6 +134,11 @@ public class DashboardService {
             throw BizException.badRequest("hours 范围为 1-168");
         }
         Instant end = Instant.now().truncatedTo(ChronoUnit.HOURS);
+        return cached(key("trend", hours, end), () -> loadTrend(hours));
+    }
+
+    private List<TrendPoint> loadTrend(int hours) {
+        Instant end = Instant.now().truncatedTo(ChronoUnit.HOURS);
         Instant start = end.minus(hours - 1L, ChronoUnit.HOURS);
         Map<Instant, Long> found = new HashMap<>();
         jdbc.query("""
@@ -107,6 +160,10 @@ public class DashboardService {
         if (days < 1 || days > 90) {
             throw BizException.badRequest("days 范围为 1-90");
         }
+        return cached(key("alarms", days, LocalDate.now(zone)), () -> loadAlarmStats(days));
+    }
+
+    private AlarmStats loadAlarmStats(int days) {
         Long tenant = CurrentUser.tenantId();
         LocalDate firstDay = LocalDate.now(zone).minusDays(days - 1L);
         Timestamp since = Timestamp.from(firstDay.atStartOfDay(zone).toInstant());
@@ -136,6 +193,10 @@ public class DashboardService {
 
     public List<TopDevice> topDevices(int limit) {
         int lim = Math.max(1, Math.min(limit, 20));
+        return cached(key("top", lim), () -> loadTopDevices(lim));
+    }
+
+    private List<TopDevice> loadTopDevices(int lim) {
         List<Object[]> rows = new ArrayList<>();
         jdbc.query("""
                 SELECT m.device_id, count(*) AS c FROM iot_device_message_log m JOIN iot_device d ON d.id = m.device_id
