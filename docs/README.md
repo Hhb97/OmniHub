@@ -39,7 +39,7 @@
 
 复现方式见 [loadtest.md](loadtest.md)；每一轮的前后对比见 [perf-ingest-retro.md](perf-ingest-retro.md)。
 
-当前仓库默认值就是第一行（16 × 4096、日志关）。**但 `IOT_BATCH_HISTORY_WORKERS` 仍是 2**：跑满 15k 且每个属性都写历史时，InfluxDB 会丢点，需要改成 4（见 [ingest.md](ingest.md) §8）。
+当前仓库默认的吞吐参数就是第一行那一套（16 会话 × 4096 broker 窗口、日志关），只是 `IOT_INGEST_MODE` 默认为 `direct`。**但 `IOT_BATCH_HISTORY_WORKERS` 仍是 2**：跑满 15k 且每个属性都写历史时，InfluxDB 会丢点，需要改成 4（见 [ingest.md](ingest.md) §8）。
 
 ## 术语
 
