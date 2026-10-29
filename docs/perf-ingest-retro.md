@@ -3,6 +3,20 @@
 > 场景：单机 OmniHub（16 核 / 11G 虚拟机），10 000 台设备每台每秒上报 1 条属性消息（每条 7 个属性，约 10k msg/s、70k 属性点/s）。
 > 分支：`perf/throughput-bottlenecks`。四个修复，三笔提交。
 
+## 环境与前置条件
+
+复现或对比本文数字之前，请先对齐下面这些条件，它们会直接改变结果。
+
+| 项 | 取值 | 说明 |
+|---|---|---|
+| 被测机 | VMware Workstation 虚拟机，16 vCPU / 11.3 GB，Ubuntu 24.04 | 与压测机（Windows，28 个逻辑处理器）在**同一台物理机**上，互相抢 CPU |
+| VM 网卡 | **vmxnet3**（2026-10-28 16:13 起） | 之前是 VMware 模拟的 AMD PCnet32（`pcnet32` 驱动，系统里显示 10 Mb/s 半双工）。换网卡前观察到：每轮接收错包约 1.1%、握手超时、连接上沉默约 20 秒，宿主机上 `vmware-vmx` 进程占约 13 个核。本文所有数字都是换成 vmxnet3 **之后**测的（首笔提交在 10-28 16:56），**没有在旧网卡上做过对照** |
+| 分支基线 | `1a26c11`（10-28 15:57） | 已经包含：批队列分片写入（`ShardedBatchQueue`）、PostgreSQL 启动参数调优（`shared_buffers` 2GB、`max_wal_size` 8GB、`wal_compression`、更勤的自动清理）、EMQX 限制放宽、后端回调长连接修复。"修复前"指这一基线，而不是最初的出厂配置 |
+| EMQX 限制 | `max_inflight` 1024（§8 调到 4096）、`max_mqueue_len` 10 万、`max_mailbox_size` 10 万 | 这是本项目 `docker-compose.yml` 的设置，**不是** EMQX 出厂默认（出厂是 32 / 1000 / 1000） |
+| PostgreSQL | 14；`max_connections` 200；主池 40（`IOT_DB_POOL`）、ingest 池 12（`IOT_INGEST_DB_POOL`） | 全局 `synchronous_commit` 仍是 on，§3.4 的 off 只作用于 ingest 池 |
+
+关于宿主机与 VM 抢 CPU，本文依据的是"VM steal = 0、宿主机 55–80%"（§5 第 8 条）；网卡的影响则无法从本文数据中分离。
+
 ![上行链路与瓶颈点](img/perf-pipeline.svg)
 
 ## 0. 结论
@@ -66,7 +80,7 @@ curl -s localhost:8080/actuator/prometheus | grep -E '^iot_batch_(size_sum|flush
 
 ### 3.1 单连接 = 单会话队列（提交 `5f398d3`）
 
-一条订阅连接就是一个 broker 会话：一个 mqueue（默认 10 万条）+ 一个 Paho 回调线程。
+一条订阅连接就是一个 broker 会话：一个 mqueue（本项目 `docker-compose.yml` 里设为 10 万条，EMQX 出厂默认是 1000）+ 一个 Paho 回调线程。
 约 6k msg/s 就把队列填满，日志每分钟数万条 `dropped_msg_due_to_mqueue_is_full`，随后 `mailbox_overflow` 直接踢掉平台连接。
 
 修复：`IOT_MQTT_INGEST_CONNECTIONS` 条连接全部订阅同一个 `$share/ingest/...` 共享订阅；EMQX 分发策略 `hash_clientid` 保证同一设备固定落到同一连接（保序），下游 Kafka 仍用 `productKey.deviceKey` 做 key。broker 不支持 `$share` 时自动降级单连接并打 error，避免变成 N 份重复投递。
@@ -222,7 +236,7 @@ stage R（关日志 + 8 连接，120s）明细：`sent 850 162 / acked 850 097 /
 | 12k（stage S） | 8.5k→12k/s | **8.8k/s** | 7 214 / 8 192 | 28 210 | 17 026 |
 | 15k（stage T） | 11.5k/s | **4.6k/s** | **8 192 / 8 192** | **67 194**（合计 40.3 万） | 90 305（connFail 16 267） |
 
-`inflight` 精确停在 `8192 = 8 × 1024`——1024 是 EMQX 每会话的默认 `max_inflight`，8 条连接就是 8 个会话。
+`inflight` 精确停在 `8192 = 8 × 1024`——1024 是本项目 `docker-compose.yml` 里 `EMQX_MAX_INFLIGHT` 的取值（EMQX 出厂默认是 32），8 条连接就是 8 个会话。注意它停在 1024 而不是 8 × 1000：当时 Paho 侧硬编码的 `setMaxInflight(1000)` 并没有参与限制，见 §8.3 的更正。
 这是"窗口满 + 队列积压"的典型形态：broker 每会话只能有 1024 条未确认消息，确认得不够快，后面的就进 mqueue 排队，
 再满就丢。
 
@@ -248,7 +262,7 @@ stage R（关日志 + 8 连接，120s）明细：`sent 850 162 / acked 850 097 /
              = 8 × 1024 ÷ 约 1.8 s ≈ 4.6k/s      ← 与实测 4.7k/s 吻合
 ```
 
-两个乘数都到顶了：窗口是配置死的（EMQX 1024/会话、Paho 侧 `setMaxInflight(1000)`），往返变长是因为 EMQX 的
+两个乘数都到顶了：窗口是配置死的（EMQX `max_inflight` 1024/会话），往返变长是因为 EMQX 的
 accept/scheduler 被拖慢（264 次长调度）。**12k 其实也没过**：inflight 7 214/8 192、mqueue 2.8 万，说明 8 连接下
 可持续上限约 8.8k msg/s，12k 和 15k 都在上限之上，区别只是 15k 多了一场连接风暴，把 broker 的 accept 路径也拖垮了，
 从"欠账"退化成"塌方"。
@@ -261,20 +275,31 @@ accept/scheduler 被拖慢（264 次长调度）。**12k 其实也没过**：inf
 iot:
   mqtt:
     ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:16}
-    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:4096}   # 新增；原来是硬编码 1000
+    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:4096}   # 新增；原来是硬编码 1000（只影响平台向外发布的在途数，见下面的更正）
 ```
 
 ```java
-opts.setMaxInflight(Math.max(1, cfg.getMaxInflight()));   // 原来是硬编码 1000
+opts.setMaxInflight(Math.max(1, cfg.getMaxInflight()));   // 原来是硬编码 1000；限制的是客户端自己发布的在途数
 ```
 
-broker 侧用已有的 `EMQX_MAX_INFLIGHT`（→ `EMQX_MQTT__MAX_INFLIGHT`）。**两者取小**：只调大一边不会有效果，
-这是本节能给出的最实用的一条提醒。`.env.example`、`docker-compose.yml` 和 `application.yml` 的默认值已经
-统一成 16 / 4096 / 4096（也就是本节验证过的那一档），所以全新部署不需要再手动调。
+broker 侧用已有的 `EMQX_MAX_INFLIGHT`（→ `EMQX_MQTT__MAX_INFLIGHT`）。
+
+> **更正（本节原文写的是"两者取小：只调大一边不会有效果"，经核对不成立）**
+>
+> 上行接收窗口**只由 broker 一侧决定**，即 `EMQX_MAX_INFLIGHT`。MQTT 3.1.1 没有接收窗口的协商；Paho 的
+> `MqttConnectOptions.setMaxInflight` 只限制**客户端自己发布**的在途消息数（Paho 1.2.5 的默认值是 10，只在发送队列里
+> 使用，对应平台下发的指令），不影响 broker 往这个客户端投递多少条。本文自己的数据就能反证：stage T 的 inflight
+> 停在 8 192 = 8 × 1024，而当时 Paho 侧是 1000——如果"取小"成立，应当是 8 000。
+>
+> 所以 `IOT_MQTT_MAX_INFLIGHT` 对上行**没有作用**；§8.4 stage U 的改善来自 **16 个会话**和 **`EMQX_MAX_INFLIGHT=4096`**
+> （总窗口 16 × 4096 = 65 536 由 EMQX 这一侧给出）。要调接收窗口，只需要改 EMQX 那个变量。
+
+`.env.example`、`docker-compose.yml` 和 `application.yml` 的默认值已经统一成 16 / 4096 / 4096（也就是本节验证过的那一档），
+所以全新部署不需要再手动调。
 
 ### 8.4 结果：16 会话 × 4096 窗口跑 15k
 
-配置 `16 连接 / 4096 / EMQX 4096`（总在途窗口 65 536），压测改为 **5 000 台 × 3 条/秒 = 15k msg/s**（stage U）：
+配置 `16 连接 / EMQX 4096`（总在途窗口 16 × 4096 = 65 536；Paho 侧的 4096 不参与，见 §8.3 更正），压测改为 **5 000 台 × 3 条/秒 = 15k msg/s**（stage U）：
 少一半 MQTT 连接，同样的消息速率，避免客户端连接风暴干扰结论。
 
 ```
@@ -339,3 +364,26 @@ metrics 里 history 的两个 shard 就是这两个 worker），所以只改这�
 
 一条可以带走的经验：**"瓶颈在哪"要看相邻两层之间谁在积压。** 这次下游（PG、Kafka、批队列）全部干净，
 唯一的积压出现在 broker 的会话队列里，那答案就只能是窗口与确认往返——继续优化数据库不会有任何收益。
+
+### 8.7 复核：共享订阅策略真的生效了吗
+
+§3.1 里"`hash_clientid` 保证同一设备固定落到同一条连接"这句，当时只是按 compose 里的变量名写的。后来核对
+运行中的 broker 才发现**它一直没生效**：EMQX 5.7 把共享订阅的配置从 `broker.*` 挪到了 `mqtt.*`，而 compose 里
+写的是 `EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY`——不认识的键被静默忽略，实际一直是默认的 `round_robin`
+（也就是"同一设备的消息可能被投到不同连接"，`AlarmEngine` 的连续 N 次计数会受顺序影响）。
+
+```bash
+docker compose exec emqx emqx ctl conf show mqtt | grep shared_subscription_strategy
+# 修正前: round_robin        修正后: hash_clientid
+```
+
+键名改为 `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY` 之后生效（提交 `a977c7a`）。同一镜像的一次性容器验证了
+这个构建接受的全部取值与非法值的表现：
+
+```
+random / round_robin / sticky / hash_topic / hash_clientid / local  -> 都能启动并生效
+bogus_value                                                        -> 启动失败 (failed_to_check_schema)
+```
+
+另外记一条运维事实：**broker 重启后要 129 秒才回到 16/16 会话**（Paho 退避默认封顶 128 秒），
+满载时这段窗口足以丢数据。原因、实测时间线和一行修复方案见 `docs/tuning.md` §8.10——目前**未改**，只记档。
