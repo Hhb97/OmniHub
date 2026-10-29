@@ -225,6 +225,6 @@ CREATE TABLE iot_device_latest (
 
 完整的定位过程、七步排除法与前后对比图见 [`docs/perf-ingest-retro.md`](perf-ingest-retro.md)。
 
-**但 9.4k/s 只在"关消息日志 + 16 条连接"下成立。** 恢复出厂默认（`IOT_LOG_OK_PROPERTY=true`、4 条连接）复测同一档位只有 **2.0k msg/s**、客户端失败 39 990 条：瓶颈换成了 `iot_device_message_log`——每行 1 次堆写 + 3 次索引写 + payload，实测上限约 4.2k 行/s（166.8 行/79.75 ms × 2 线程），且 3 小时就攒到 1634 万行 / 6.2 GB。这条表是全量明细，10k msg/s 时约 13 GB/小时，靠调参解决不了，只能关掉、采样、或把明细移出 PostgreSQL。详见复盘的 §7。
+**但 9.4k/s 只在"关消息日志 + 多连接"下成立。** 关日志后 8 条连接同样跑满同一档位（`failed=0`、ackP95 17ms、三个批队列零丢弃、latest 33.6ms/批、history 24.2ms/批），8 与 16 等价；默认的 4 条是否够用没测。恢复出厂默认（`IOT_LOG_OK_PROPERTY=true`、4 条连接）复测同一档位只有 **2.0k msg/s**、客户端失败 39 990 条：瓶颈换成了 `iot_device_message_log`——每行 1 次堆写 + 3 次索引写 + payload，实测上限约 4.2k 行/s（166.8 行/79.75 ms × 2 线程），且 3 小时就攒到 1634 万行 / 6.2 GB。这条表是全量明细，10k msg/s 时约 13 GB/小时，靠调参解决不了，只能关掉、采样、或把明细移出 PostgreSQL。详见复盘的 §7。
 
 
