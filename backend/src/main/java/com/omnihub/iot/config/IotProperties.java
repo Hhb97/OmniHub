@@ -54,6 +54,15 @@ public class IotProperties {
          */
         private int ingestConnections = 4;
         /**
+         * Receive window of one ingestion connection: how many QoS1 messages the broker may hand to it before it has
+         * to be acknowledged. At a few thousand messages per second per session this is the real ceiling of the
+         * uplink: {@code throughput = connections x maxInflight / acknowledgement round trip}. Measured: 8 connections
+         * x 1024 in flight stalled at 4.6k msg/s with every session's window full and 400k messages queued at the
+         * broker. Raise it together with the broker's own limit (EMQX_MQTT__MAX_INFLIGHT, here EMQX_MAX_INFLIGHT) -
+         * the smaller of the two wins. 1000 is the Paho default and stays a safe value for small deployments.
+         */
+        private int maxInflight = 1000;
+        /**
          * Shared-subscription group ({@code $share/<group>/<filter>}). All ingestion connections join it, so every
          * message is delivered to exactly one of them. Empty = plain subscriptions (only useful with 1 connection,
          * otherwise every connection would receive a copy of every message).

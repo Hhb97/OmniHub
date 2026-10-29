@@ -167,6 +167,8 @@ services:
       # connection is one broker session with one delivery queue; at a few thousand messages/second that queue is
       # what fills up and drops (docs/tuning.md §8). 1 = single connection (no shared subscriptions).
       IOT_MQTT_INGEST_CONNECTIONS: ${IOT_MQTT_INGEST_CONNECTIONS:-4}
+      # receive window per connection; keep it <= EMQX_MAX_INFLIGHT (the broker's per-session limit)
+      IOT_MQTT_MAX_INFLIGHT: ${IOT_MQTT_MAX_INFLIGHT:-1000}
       IOT_MQTT_SHARED_GROUP: ${IOT_MQTT_SHARED_GROUP:-ingest}
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
       IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
