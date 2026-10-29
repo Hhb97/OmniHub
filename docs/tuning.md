@@ -195,3 +195,23 @@ $share/ingest/iot/+/+/command/reply
 | `iot_mqtt_gateway_connections` | 当前已连接的上行连接数 |
 | `iot_mqtt_gateway_connections_expected` | 配置的上行连接数 |
 
+### 8.7 最新值：一台设备一行（Flyway V3）
+`iot_device_latest` 原来是 `(device_id, identifier)` 一行，而一条属性消息带 7 个属性 → **一条消息 = 7 行 UPDATE**。
+"1 万台 × 1 条/秒" 需要 7 万行更新/秒，实测 PostgreSQL 只能到约 2.2 万/秒：最新值队列堆到 5 万+，Kafka 消费被拖慢，
+随后 EMQX 又开始丢消息（后端 CPU 却只有 1.5 个核 —— 典型的写库反压）。
+
+V3 迁移改成每台设备一行：
+
+```sql
+CREATE TABLE iot_device_latest (
+    device_id BIGINT PRIMARY KEY,
+    values    JSONB  NOT NULL   -- {"temperature": {"v": 21.5, "t": 1793179493731}, ...}
+);
+```
+
+- 一条消息只产生 **1 行更新**（7× → 1×），WAL 也少约 7 倍。
+- `t` 保留每个属性的上报时间，接口仍按属性返回 `reportedAt`；UPSERT 时逐属性比较 `t`，迟到的旧值仍不会覆盖新值。
+- Flyway 启动时自动把旧数据聚合过去（`jsonb_object_agg`），`/devices/{id}/latest` 的返回结构不变。
+- 注意：最新值已经不再"每条都写"（采样 + 每设备一行），它只是当前快照；审计数据仍看历史库。
+
+

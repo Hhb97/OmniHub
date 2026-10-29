@@ -255,38 +255,45 @@ public class TelemetryService {
         }
     }
 
-    /** Keeps only the newest sample per (device, property), then one INSERT ... ON CONFLICT per chunk. */
+    /** Keeps only the newest sample per (device, property), then one INSERT ... ON CONFLICT per device chunk. */
     private void upsertLatest(List<HistoryStore.Sample> batch) {
-        Map<String, HistoryStore.Sample> newest = new LinkedHashMap<>();
+        // One row per device: a message that carries 7 properties must not become 7 row versions (V3 migration).
+        Map<Long, Map<String, HistoryStore.Sample>> newest = new LinkedHashMap<>();
         for (HistoryStore.Sample s : batch) {
-            newest.merge(s.deviceId() + ":" + s.identifier(), s, (a, b) -> b.ts().isBefore(a.ts()) ? a : b);
+            newest.computeIfAbsent(s.deviceId(), k -> new LinkedHashMap<>())
+                    .merge(s.identifier(), s, (a, b) -> b.ts().isBefore(a.ts()) ? a : b);
         }
-        List<HistoryStore.Sample> list = new ArrayList<>(newest.values());
-        for (int from = 0; from < list.size(); from += CHUNK) {
-            List<HistoryStore.Sample> part = list.subList(from, Math.min(list.size(), from + CHUNK));
+        List<Map.Entry<Long, Map<String, HistoryStore.Sample>>> devices = new ArrayList<>(newest.entrySet());
+        for (int from = 0; from < devices.size(); from += CHUNK) {
+            List<Map.Entry<Long, Map<String, HistoryStore.Sample>>> part =
+                    devices.subList(from, Math.min(devices.size(), from + CHUNK));
             int n = part.size();
             Long[] dev = new Long[n];
-            String[] ident = new String[n];
             String[] json = new String[n];
-            Timestamp[] ts = new Timestamp[n];
             for (int i = 0; i < n; i++) {
-                HistoryStore.Sample x = part.get(i);
-                dev[i] = x.deviceId();
-                ident[i] = x.identifier();
-                json[i] = Jsons.toJson(x.value());
-                ts[i] = Timestamp.from(x.ts());
+                Map<String, Object> values = new LinkedHashMap<>();
+                for (HistoryStore.Sample x : part.get(i).getValue().values()) {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("v", x.value());
+                    entry.put("t", x.ts().toEpochMilli());
+                    values.put(x.identifier(), entry);
+                }
+                dev[i] = part.get(i).getKey();
+                json[i] = Jsons.toJson(values);
             }
-            // a late (out-of-order) report never overwrites a newer latest value
+            // merge into the stored document, but never replace an entry with an older report (late arrival)
             writeJdbc.execute((ConnectionCallback<Void>) con -> {
                 try (PreparedStatement ps = con.prepareStatement("""
-                        INSERT INTO iot_device_latest (device_id, identifier, value, reported_at)
-                        SELECT d, i, v::jsonb, t FROM unnest(?::bigint[], ?::varchar[], ?::text[], ?::timestamptz[]) AS x(d, i, v, t)
-                        ON CONFLICT (device_id, identifier) DO UPDATE SET value = EXCLUDED.value, reported_at = EXCLUDED.reported_at
-                        WHERE iot_device_latest.reported_at <= EXCLUDED.reported_at""")) {
+                        INSERT INTO iot_device_latest (device_id, values)
+                        SELECT d, v::jsonb FROM unnest(?::bigint[], ?::text[]) AS x(d, v)
+                        ON CONFLICT (device_id) DO UPDATE SET values = iot_device_latest.values || COALESCE((
+                            SELECT jsonb_object_agg(e.key, e.value)
+                            FROM jsonb_each(EXCLUDED.values) e
+                            WHERE NOT jsonb_exists(iot_device_latest.values, e.key)
+                               OR ((iot_device_latest.values -> e.key) ->> 't')::bigint
+                                  <= (e.value ->> 't')::bigint), '{}'::jsonb)""")) {
                     ps.setArray(1, con.createArrayOf("bigint", dev));
-                    ps.setArray(2, con.createArrayOf("varchar", ident));
-                    ps.setArray(3, con.createArrayOf("text", json));
-                    ps.setArray(4, con.createArrayOf("timestamptz", ts));
+                    ps.setArray(2, con.createArrayOf("text", json));
                     ps.executeUpdate();
                 }
                 return null;
@@ -314,14 +321,22 @@ public class TelemetryService {
     public List<LatestVO> latest(Long deviceId) {
         Device d = deviceService.require(deviceId);
         Content model = thingModels.current(d.getProductId()).content();
-        return jdbc.query("SELECT identifier, value::text, reported_at FROM iot_device_latest WHERE device_id = ? ORDER BY identifier",
-                (rs, i) -> {
-                    String id = rs.getString(1);
-                    ThingModelDefs.Property p = model.property(id);
-                    return new LatestVO(id, p == null ? id : p.name(), p == null ? null : p.unit(),
-                            p == null ? null : p.dataType(), Jsons.parse(rs.getString(2)),
-                            rs.getTimestamp(3).toInstant());
-                }, deviceId);
+        String doc = jdbc.query("SELECT values::text FROM iot_device_latest WHERE device_id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, deviceId);
+        if (doc == null) {
+            return List.of();
+        }
+        List<LatestVO> out = new ArrayList<>();
+        Jsons.parse(doc).fields().forEachRemaining(e -> {
+            String id = e.getKey();
+            ThingModelDefs.Property p = model.property(id);
+            JsonNode entry = e.getValue();
+            out.add(new LatestVO(id, p == null ? id : p.name(), p == null ? null : p.unit(),
+                    p == null ? null : p.dataType(), entry.get("v"),
+                    Instant.ofEpochMilli(entry.path("t").asLong())));
+        });
+        out.sort(java.util.Comparator.comparing(LatestVO::identifier));
+        return out;
     }
 
     public PageResult<HistoryVO> history(Long deviceId, List<String> identifiers, String start, String end, Integer page,
