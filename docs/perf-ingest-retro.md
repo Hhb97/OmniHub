@@ -71,6 +71,8 @@ curl -s localhost:8080/actuator/prometheus | grep -E '^iot_batch_(size_sum|flush
 
 修复：`IOT_MQTT_INGEST_CONNECTIONS` 条连接全部订阅同一个 `$share/ingest/...` 共享订阅；EMQX 分发策略 `hash_clientid` 保证同一设备固定落到同一连接（保序），下游 Kafka 仍用 `productKey.deviceKey` 做 key。broker 不支持 `$share` 时自动降级单连接并打 error，避免变成 N 份重复投递。
 
+> 补充（后来才发现）：`hash_clientid` 在 EMQX 5.7+ 的配置路径是 `mqtt.shared_subscription_strategy`，容器变量必须写成 `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY`。最初写的 `EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY` 是 5.6 及更早的位置，在 5.7 上被**静默忽略**，实际一直是 `round_robin`。`docker-compose.yml` 已修正，`docs/tuning.md` §8 记了验证命令。
+
 ### 3.2 一条消息写 7 行最新值（提交 `8d2e8bb`）
 
 `iot_device_latest` 原来是 `(device_id, identifier)` 一行，7 个属性就是 7 次 UPDATE。10k×1 需要 7 万行更新/秒，实测 PG 只能到约 2.2 万/秒。

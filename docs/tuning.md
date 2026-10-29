@@ -144,7 +144,7 @@
 | `IOT_MQTT_INGEST_CONNECTIONS` | 16 | 共享订阅的上行连接数；1 = 单连接（broker 不支持 `$share` 时） |
 | `IOT_MQTT_MAX_INFLIGHT` | 4096 | 每条上行连接的在途窗口（Paho `maxInflight`）；必须 ≤ `EMQX_MAX_INFLIGHT`，两者取小 |
 | `IOT_MQTT_SHARED_GROUP` | ingest | 共享订阅组名（`$share/<group>/<filter>`） |
-| `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | hash_clientid | EMQX 分发策略；按发布者 clientid 哈希，保证同一设备固定落到一条连接 |
+| `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | hash_clientid | EMQX 分发策略；按发布者 clientid 哈希，保证同一设备固定落到一条连接。映射到 `mqtt.shared_subscription_strategy`（EMQX 5.7+） |
  
 ### 8.1 行为变化（请知悉）
 - **最新值最多滞后约 1 秒**（尾部补偿保证最后一条一定落库）。最新值是"当前快照"，不是审计数据；历史库不受影响（仍然每条都写）。
@@ -186,6 +186,10 @@ $share/ingest/iot/+/+/command/reply
 - 每条消息只投递给组内**一条**连接（不是广播），所以多连接是分摊而不是复制。
 - 每个会话有自己的 mqueue，总缓冲随连接数线性增长；每条连接也各有一个回调线程。
 - EMQX 分发策略设为 `hash_clientid`：同一台设备的固定落到同一条连接，保序；下游 Kafka 仍按 `productKey.deviceKey` 做 key，分区内有序。
+- **这个键在 EMQX 5.7+ 的位置变了**：配置路径是 `mqtt.shared_subscription_strategy`，容器里对应
+  `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY`。写成旧的 `EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY` 会被
+  **静默忽略**（`emqx ctl conf show broker` 里根本没有这一项），实际仍是 `round_robin`——多连接下发是乱序的。
+  验证：`docker compose exec emqx emqx ctl conf show mqtt | grep shared_subscription_strategy`。
 - broker 拒绝 `$share`（老版本 / 未开启）时，网关**自动降级为单连接**并打一条 error，不会变成 N 份重复投递。
 - 新指标：`iot_mqtt_gateway_connections`（已连接数）、`iot_mqtt_gateway_connections_expected`（配置数）。
 - 注意：设备侧仍然是一条连接一台；这里扩的是**平台收上行**的连接数。

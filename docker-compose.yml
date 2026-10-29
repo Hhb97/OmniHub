@@ -91,7 +91,9 @@ services:
       EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__BACKLOG: ${EMQX_TCP_BACKLOG:-4096}
       # The platform consumes the uplink topics over several connections in a shared subscription. hash_clientid
       # keeps all messages of one device on the same connection, so per-device ordering survives the fan-out.
-      EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY: ${EMQX_SHARED_SUBSCRIPTION_STRATEGY:-hash_clientid}
+      # EMQX 5.7+ keeps this setting under "mqtt" (it used to live under "broker"); an EMQX_BROKER__... key is
+      # silently ignored there and the strategy stays round_robin, which breaks per-device ordering.
+      EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY: ${EMQX_SHARED_SUBSCRIPTION_STRATEGY:-hash_clientid}
     ports:
       - "${MQTT_PORT:-1883}:1883"
       - "${EMQX_DASHBOARD_PORT:-18083}:18083"
