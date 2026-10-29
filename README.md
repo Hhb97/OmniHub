@@ -19,7 +19,7 @@ docs/       架构、上行链路、数据模型、配置、部署、运维、AP
 | JUnit 单元/集成测试（`backend/src/test`） | **126 项通过**（含嵌入式 PG + 嵌入式 Broker 的 `DeviceFlowIntegrationTest` 8 项） |
 | 真实 MQTT 链路（认证、ACL、上报、指令、遗嘱离线） | `scripts/e2e-smoke.mjs` 29 项、`simulator/src/e2e-scenarios.js` 40 项通过；EMQX 5.7.2 上 HTTP 认证/授权也已验证 |
 | 前端 lint / build | 通过；登录、仪表盘、设备实时数据、下发指令已在浏览器对真实后端手动验证 |
-| Docker Compose 整套栈 | 已在 16 核 / 11G Linux VM 上部署运行：9 个容器、后端健康、EMQX 回调、Prometheus 目标、Grafana 看板 |
+| Docker Compose 整套栈 | 已在 16 核 / 11G Linux VM 上部署运行：11 个容器、后端健康、EMQX 回调、Prometheus 目标、Grafana 看板 |
 | 单机上行吞吐 | **15k msg/s 实测通过**（5 000 台 × 3 条/秒，120 s，16 会话 × 4096 窗口，Kafka 模式）；平台侧全量接收、broker 零丢弃 |
 | InfluxDB 历史写入 | 已联调；2 个 writer 约 89k 点/s。15k × 7 属性需要 105k/s，会丢点，需把 `IOT_BATCH_HISTORY_WORKERS` 调到 4 |
 | 多实例 / 高可用 / TLS | **未实现**（共享订阅能分摊上行，但去重、告警状态、消费组仍按单实例设计） |

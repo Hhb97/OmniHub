@@ -52,7 +52,7 @@ docker compose exec prometheus wget -qO- 'http://localhost:9090/api/v1/query?que
 
 | 位置 | 指标 | 说明 |
 |---|---|---|
-| EMQX → 平台 | EMQX 看板的"丢弃消息 / 投递队列满"；`emqx_messages_dropped` | 平台消费不过来时先丢；**这种积压看不到队列长度，只能看丢弃数** |
+| EMQX → 平台 | EMQX 看板的"丢弃消息 / 投递队列满"；`emqx_delivery_dropped_queue_full` | 平台消费不过来时先丢；**这种积压看不到队列长度，只能看丢弃数** |
 | EMQX 会话 | 各会话 `inflight` / `mqueue` | 窗口用满 → mqueue 涨；mqueue 也满 → 丢 |
 | 后端 lane | `iot_lane_queue_pending`、`iot_lane_queue_max` | direct 模式；最满的 lane 接近 20 000 就会拖慢接收 |
 | Kafka | `kafka_consumergroup_lag{topic="iot-uplink"}` | kafka 模式；后端客户端 `kafka_consumer…records_lag_max` 作补充 |
