@@ -142,6 +142,7 @@
 | `IOT_SCHEDULER_THREADS` | 4 | `spring.task.scheduling.pool.size` |
 | `IOT_LANE_OVERFLOW` | block | 处理队列满时：block（背压）/ drop（丢弃并计数） |
 | `IOT_MQTT_INGEST_CONNECTIONS` | 4 | 共享订阅的上行连接数；1 = 单连接（broker 不支持 `$share` 时） |
+| `IOT_MQTT_MAX_INFLIGHT` | 1000 | 每条上行连接的在途窗口（Paho `maxInflight`）；必须 ≤ `EMQX_MAX_INFLIGHT`，两者取小 |
 | `IOT_MQTT_SHARED_GROUP` | ingest | 共享订阅组名（`$share/<group>/<filter>`） |
 | `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | hash_clientid | EMQX 分发策略；按发布者 clientid 哈希，保证同一设备固定落到一条连接 |
  
@@ -226,5 +227,37 @@ CREATE TABLE iot_device_latest (
 完整的定位过程、七步排除法与前后对比图见 [`docs/perf-ingest-retro.md`](perf-ingest-retro.md)。
 
 **但 9.4k/s 只在"关消息日志 + 多连接"下成立。** 关日志后 8 条连接同样跑满同一档位（`failed=0`、ackP95 17ms、三个批队列零丢弃、latest 33.6ms/批、history 24.2ms/批），8 与 16 等价；默认的 4 条是否够用没测。恢复出厂默认（`IOT_LOG_OK_PROPERTY=true`、4 条连接）复测同一档位只有 **2.0k msg/s**、客户端失败 39 990 条：瓶颈换成了 `iot_device_message_log`——每行 1 次堆写 + 3 次索引写 + payload，实测上限约 4.2k 行/s（166.8 行/79.75 ms × 2 线程），且 3 小时就攒到 1634 万行 / 6.2 GB。这条表是全量明细，10k msg/s 时约 13 GB/小时，靠调参解决不了，只能关掉、采样、或把明细移出 PostgreSQL。详见复盘的 §7。
+
+### 8.9 上行侧：每条连接的在途窗口
+
+关掉消息日志后，10k 档位在 8 条连接下跑通（零失败），但把速率提到 12k / 15k 就崩了：平台会话的
+`inflight` 精确顶在 `8192 = 8 × 1024`（EMQX 每会话默认 `max_inflight`），单会话 mqueue 涨到 6.7 万、合计 40 万，
+而同期的 PostgreSQL（等待事件只有 `ClientRead`）、三个批队列（pending/drops 全 0）和 Kafka 生产者
+（`buffer_exhausted_total=0`、`waiting_threads=0`）全部空闲。吞吐的实际公式是：
+
+```
+平台消费能力 ≈ 连接数 × 每连接在途窗口 ÷ 单条消息的确认往返
+```
+
+所以要同时动两个乘数：
+
+| 位置 | 变量 | 出厂 | 15k 档建议 |
+|---|---|---|---|
+| 平台（Paho） | `IOT_MQTT_MAX_INFLIGHT` | 1000 | 4096 |
+| broker（EMQX） | `EMQX_MAX_INFLIGHT` | 1024 | 4096（**必须 ≥ 上面那个**） |
+| 平台 | `IOT_MQTT_INGEST_CONNECTIONS` | 4 | 16 |
+
+`IOT_MQTT_MAX_INFLIGHT` 是新增项（`iot.mqtt.max-inflight`），单边调大没有效果，**两边取小**。
+
+实测（5 000 台 × 3 条/秒 = 15k msg/s，120s，16×4096）：EMQX 上 mqueue **全程为 0**、总在途只用到 4 879/65 536，
+后端处理 1 574 498 条 = EMQX `messages_sent` 1 574 498 条，broker 侧零丢弃；同样的负载在 8×1024 下后端只能到 4.6k/s。
+
+窗口放大也放大了下游的账：这一档 `history` 队列（InfluxDB）丢弃 153 万点，因为 15k × 7 属性 = 105k 点/s，
+而 2 个 writer 每批 4 396 点 / 98.32 ms 只能写约 89k/s。要跑 15k 需要 `IOT_BATCH_HISTORY_WORKERS=4`
+（理论上限约 180k/s，代价是 InfluxDB 压力翻倍）；`latest` 62k 行/s 对 70k 需求也只剩一点余量，靠
+`IOT_LATEST_MIN_INTERVAL_MS` 的采样撑着。
+
+排查提示：这种情况**不要去看数据库**。判断依据是"哪一层在积压"——下游全干净、只有 broker 的会话队列在涨，
+答案就只能是窗口与确认往返。完整的 12k/15k 两档数据见复盘的 §8。
 
 
