@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.thingmodel.ValueValidator;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.net.URI;
@@ -19,6 +22,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,8 +48,24 @@ public class InfluxHistoryStore implements HistoryStore {
     private final IotProperties.Influxdb cfg;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-    public InfluxHistoryStore(IotProperties props) {
+    /** build = line protocol assembly per request, http = the POST until the response; they split a flush's time. */
+    private final Timer buildTimer;
+    private final Timer httpTimer;
+    private final Counter requestsOk;
+    private final Counter requestsError;
+    private final Counter pointsCounter;
+
+    public InfluxHistoryStore(IotProperties props, MeterRegistry meters) {
         this.cfg = props.getInfluxdb();
+        this.buildTimer = Timer.builder("iot_influx_write_seconds").description("InfluxDB history write, per request")
+                .tag("phase", "build").publishPercentileHistogram().register(meters);
+        this.httpTimer = Timer.builder("iot_influx_write_seconds").tag("phase", "http").publishPercentileHistogram()
+                .register(meters);
+        this.requestsOk = Counter.builder("iot_influx_write_requests_total").tag("result", "ok").register(meters);
+        this.requestsError = Counter.builder("iot_influx_write_requests_total").tag("result", "error")
+                .register(meters);
+        this.pointsCounter = Counter.builder("iot_influx_write_points_total").description("Points accepted by InfluxDB")
+                .register(meters);
     }
 
     @PostConstruct
@@ -74,6 +94,7 @@ public class InfluxHistoryStore implements HistoryStore {
     public void writeBatch(List<Sample> samples) {
         StringBuilder body = new StringBuilder();
         int lines = 0;
+        long buildStart = System.nanoTime();
         for (Sample s : samples) {
             if (!IDENT.matcher(s.identifier()).matches()) {
                 continue;
@@ -87,19 +108,24 @@ public class InfluxHistoryStore implements HistoryStore {
             body.append("json=\"").append(Jsons.toJson(s.value()).replace("\\", "\\\\").replace("\"", "\\\""))
                     .append("\" ").append(s.ts().toEpochMilli()).append('\n');
             if (++lines >= LINES_PER_REQUEST) {
-                post(body.toString());
+                buildTimer.record(System.nanoTime() - buildStart, TimeUnit.NANOSECONDS);
+                post(body.toString(), lines);
                 body.setLength(0);
                 lines = 0;
+                buildStart = System.nanoTime();
             }
         }
         if (lines > 0) {
-            post(body.toString());
+            buildTimer.record(System.nanoTime() - buildStart, TimeUnit.NANOSECONDS);
+            post(body.toString(), lines);
         }
     }
 
-    private void post(String body) {
+    private void post(String body, int points) {
         String url = cfg.getUrl() + "/write?db=" + enc(cfg.getDatabase()) + "&precision=ms"
                 + (cfg.getRetentionPolicy().isBlank() ? "" : "&rp=" + enc(cfg.getRetentionPolicy()));
+        long t0 = System.nanoTime();
+        boolean ok = false;
         try {
             HttpResponse<String> r = http.send(auth(HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(10)).POST(HttpRequest.BodyPublishers.ofString(body))).build(),
@@ -107,11 +133,16 @@ public class InfluxHistoryStore implements HistoryStore {
             if (r.statusCode() != 204) {
                 throw new IllegalStateException("InfluxDB write failed: HTTP " + r.statusCode() + " " + r.body());
             }
+            ok = true;
+            pointsCounter.increment(points);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             throw new IllegalStateException("InfluxDB write failed (" + url + "): " + describe(e), e);
+        } finally {
+            httpTimer.record(System.nanoTime() - t0, TimeUnit.NANOSECONDS);
+            (ok ? requestsOk : requestsError).increment();
         }
     }
 

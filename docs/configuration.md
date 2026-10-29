@@ -168,7 +168,7 @@ compose 里还写死了三个安全相关的值，**不读 `.env`**，改它们�
 | `IOT_BATCH_HISTORY_MAX` | `5000` | 历史每批上限（也是 Influx 一次 HTTP 的点数） |
 | `IOT_BATCH_LINGER_MS` | `50` | 第一批到达后再攒这么久才写；`0` = 立即写 |
 | `IOT_BATCH_WORKERS` | `4` | latest / 通用写线程数（按设备 id 分散） |
-| `IOT_BATCH_HISTORY_WORKERS` | `2` | 历史写线程数；15k × 7 属性建议 `4` |
+| `IOT_BATCH_HISTORY_WORKERS` | `4` | 历史写线程数；15k × 7 属性需要 4，小部署可降到 `2` |
 | `IOT_BATCH_LOG_WORKERS` | `2` | 通信记录写线程数 |
 | `IOT_LOG_OK_PROPERTY` | `false` | 成功的属性上报是否写 `iot_device_message_log`。**默认关**：这张表上限约 4.2k 行/s，10k msg/s 时约 13 GB/小时 |
 
@@ -242,7 +242,7 @@ EMQX_MAX_INFLIGHT=4096          # 上行接收窗口由 broker 这一侧决定
 # Paho 的发送窗口只影响下行指令，保持 4096 即可
 IOT_MQTT_MAX_INFLIGHT=4096
 IOT_LOG_OK_PROPERTY=false
-# 每个属性都写历史时，再把这个调到 4
+# 默认就是 4，这里写出来是为了和下面的小部署对照
 IOT_BATCH_HISTORY_WORKERS=4
 ```
 

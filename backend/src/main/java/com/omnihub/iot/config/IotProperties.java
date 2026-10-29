@@ -177,7 +177,7 @@ public class IotProperties {
          * writer (its order is kept) and the writers update different rows. 1 = a single writer, as before.
          */
         private int workers = 4;
-        private int historyWorkers = 2;
+        private int historyWorkers = 4;
         private int logWorkers = 2;
         /** false = do not log successful property reports in the communication log (the dashboard trend needs them) */
         private boolean logOkProperty = false;

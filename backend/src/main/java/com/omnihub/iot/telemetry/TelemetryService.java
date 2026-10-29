@@ -89,6 +89,7 @@ public class TelemetryService {
      *  history store never delays the latest values and vice versa */
     private final ShardedBatchQueue<HistoryStore.Sample> latestWriter;
     private final ShardedBatchQueue<HistoryStore.Sample> historyWriter;
+    private final io.micrometer.core.instrument.Counter historyRetries;
 
     /**
      * "Latest value" is a sampling view, not an audit log: writing one row per property report is the most expensive
@@ -110,6 +111,8 @@ public class TelemetryService {
         this.writeJdbc = ingestDb.jdbc();
         this.history = history;
         IotProperties.Batch b = props.getIngest().getBatch();
+        this.historyRetries = io.micrometer.core.instrument.Counter.builder("iot_history_flush_retries_total")
+                .description("History batches that failed once and were retried after 300 ms").register(meters);
         this.latestWriter = new ShardedBatchQueue<HistoryStore.Sample>("latest", b.getWorkers(), b.getQueueCapacity(),
                 b.getMaxBatch(), 100, b.getLingerMs(), s -> s.deviceId(), this::flushLatest).bind(meters);
         this.historyWriter = new ShardedBatchQueue<HistoryStore.Sample>("history", b.getHistoryWorkers(),
@@ -246,6 +249,7 @@ public class TelemetryService {
             history.writeBatch(batch);
         } catch (RuntimeException first) {
             // one retry for transient errors (connection reset, brief timeout); then the batch is given up
+            historyRetries.increment();
             try {
                 Thread.sleep(300);
             } catch (InterruptedException ie) {

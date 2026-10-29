@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.telemetry.HistoryStore.Sample;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -29,6 +31,7 @@ class InfluxHistoryStoreTest {
     private volatile int status = 204;
     private InfluxHistoryStore store;
     private IotProperties props;
+    private MeterRegistry meters;
 
     @BeforeEach
     void start() throws Exception {
@@ -44,7 +47,8 @@ class InfluxHistoryStoreTest {
         props.getInfluxdb().setUrl("http://127.0.0.1:" + server.getAddress().getPort());
         props.getInfluxdb().setDatabase("iot");
         props.getInfluxdb().setCreateDatabase(false);
-        store = new InfluxHistoryStore(props);
+        meters = new SimpleMeterRegistry();
+        store = new InfluxHistoryStore(props, meters);
     }
 
     @AfterEach
@@ -70,6 +74,23 @@ class InfluxHistoryStoreTest {
         assertThat(first.query()).contains("db=iot").contains("precision=ms").doesNotContain("rp=");
         assertThat(first.body().split("\n")[0])
                 .isEqualTo("device_property,device_id=0,identifier=temperature num=20.0,json=\"20.0\" 1700000000000");
+    }
+
+    @Test
+    void writesAreCountedPerRequestAndSplitIntoBuildAndHttpTime() throws Exception {
+        List<Sample> samples = new ArrayList<>();
+        for (int i = 0; i < 6_000; i++) {
+            samples.add(num(i % 50, "t", 1, 1_700_000_000_000L + i));
+        }
+        store.writeBatch(samples);
+        assertThat(meters.get("iot_influx_write_requests_total").tag("result", "ok").counter().count()).isEqualTo(2);
+        assertThat(meters.get("iot_influx_write_points_total").counter().count()).isEqualTo(6_000);
+        assertThat(meters.get("iot_influx_write_seconds").tag("phase", "build").timer().count()).isEqualTo(2);
+        assertThat(meters.get("iot_influx_write_seconds").tag("phase", "http").timer().count()).isEqualTo(2);
+
+        status = 500;
+        assertThatThrownBy(() -> store.writeBatch(List.of(num(1, "t", 1, 1000)))).isInstanceOf(IllegalStateException.class);
+        assertThat(meters.get("iot_influx_write_requests_total").tag("result", "error").counter().count()).isEqualTo(1);
     }
 
     @Test

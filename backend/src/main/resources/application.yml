@@ -170,7 +170,7 @@ iot:
       linger-ms: ${IOT_BATCH_LINGER_MS:50}
       # parallel writer threads per queue (spread by device id); 1 = a single writer
       workers: ${IOT_BATCH_WORKERS:4}
-      history-workers: ${IOT_BATCH_HISTORY_WORKERS:2}
+      history-workers: ${IOT_BATCH_HISTORY_WORKERS:4}
       log-workers: ${IOT_BATCH_LOG_WORKERS:2}
       # Off: iot_device_message_log is a full detail log that caps ingest at ~4.2k rows/s and grows ~13 GB/hour at
       # 10k msg/s (docs/perf-ingest-retro.md §7). The dashboard trend under-counts while this is off.
