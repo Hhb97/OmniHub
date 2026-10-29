@@ -26,13 +26,19 @@ public final class ShardedBatchQueue<T> implements AutoCloseable {
     @SuppressWarnings("unchecked")
     public ShardedBatchQueue(String name, int shardCount, int totalCapacity, int maxBatch, long idleWaitMs,
             ToLongFunction<T> key, Consumer<List<T>> sink) {
+        this(name, shardCount, totalCapacity, maxBatch, idleWaitMs, 0, key, sink);
+    }
+
+    @SuppressWarnings("unchecked")
+    public ShardedBatchQueue(String name, int shardCount, int totalCapacity, int maxBatch, long idleWaitMs,
+            long lingerMs, ToLongFunction<T> key, Consumer<List<T>> sink) {
         int n = Math.max(1, shardCount);
         this.name = name;
         this.key = key;
         this.shards = new BatchQueue[n];
         int perShard = Math.max(1, totalCapacity / n);
         for (int i = 0; i < n; i++) {
-            shards[i] = new BatchQueue<>(name + "-" + i, perShard, maxBatch, idleWaitMs, sink);
+            shards[i] = new BatchQueue<>(name + "-" + i, perShard, maxBatch, idleWaitMs, lingerMs, sink);
         }
     }
 

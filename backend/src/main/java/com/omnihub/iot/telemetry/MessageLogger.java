@@ -36,7 +36,7 @@ public class MessageLogger {
         IotProperties.Batch b = props.getIngest().getBatch();
         this.logOkProperty = b.isLogOkProperty();
         this.queue = new ShardedBatchQueue<Row>("message-log", b.getLogWorkers(), b.getQueueCapacity(), b.getMaxBatch(),
-                100, r -> r.deviceId() == null ? 0L : r.deviceId(), this::write).bind(meters);
+                100, b.getLingerMs(), r -> r.deviceId() == null ? 0L : r.deviceId(), this::write).bind(meters);
     }
 
     public void log(Long deviceId, String direction, String type, String topic, String payload, String result,

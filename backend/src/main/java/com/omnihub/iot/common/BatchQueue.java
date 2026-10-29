@@ -36,6 +36,13 @@ public final class BatchQueue<T> implements AutoCloseable {
     private final BlockingQueue<T> queue;
     private final int maxBatch;
     private final long idleWaitMs;
+    /**
+     * After the first item of a batch arrives, keep collecting for at most this long before writing. A sink with a
+     * fixed cost per call (one INSERT round trip, one HTTP request to InfluxDB) is much cheaper with one batch of 1000
+     * than with ten batches of 100; without the linger the batch size is only "arrival rate x sink duration", which
+     * stays small exactly when the sink is slow - the wrong direction. 0 = write as soon as anything is available.
+     */
+    private final long lingerMs;
     private final Consumer<List<T>> sink;
     private final AtomicLong dropped = new AtomicLong();
     private final AtomicLong written = new AtomicLong();
@@ -47,10 +54,16 @@ public final class BatchQueue<T> implements AutoCloseable {
     private final Thread worker;
 
     public BatchQueue(String name, int capacity, int maxBatch, long idleWaitMs, Consumer<List<T>> sink) {
+        this(name, capacity, maxBatch, idleWaitMs, 0, sink);
+    }
+
+    public BatchQueue(String name, int capacity, int maxBatch, long idleWaitMs, long lingerMs,
+            Consumer<List<T>> sink) {
         this.name = name;
         this.queue = new ArrayBlockingQueue<>(capacity);
         this.maxBatch = maxBatch;
         this.idleWaitMs = idleWaitMs;
+        this.lingerMs = Math.max(0, lingerMs);
         this.sink = sink;
         this.worker = new Thread(this::loop, "batch-" + name);
         this.worker.setDaemon(true);
@@ -115,7 +128,8 @@ public final class BatchQueue<T> implements AutoCloseable {
                     continue;
                 }
                 batch.add(first);
-                queue.drainTo(batch, maxBatch - 1);
+                collect(batch);
+                queue.drainTo(batch, maxBatch - batch.size());
                 flush(batch);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -123,6 +137,25 @@ public final class BatchQueue<T> implements AutoCloseable {
             } finally {
                 batch.clear();
             }
+        }
+    }
+
+    /** Fills the batch up to maxBatch, waiting at most {@link #lingerMs} for more items. */
+    private void collect(List<T> batch) throws InterruptedException {
+        if (lingerMs <= 0) {
+            return;
+        }
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(lingerMs);
+        while (batch.size() < maxBatch) {
+            long left = deadline - System.nanoTime();
+            if (left <= 0) {
+                return;
+            }
+            T next = queue.poll(left, TimeUnit.NANOSECONDS);
+            if (next == null) {
+                return;
+            }
+            batch.add(next);
         }
     }
 

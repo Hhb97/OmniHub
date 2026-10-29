@@ -26,6 +26,10 @@ public class IngestDb {
 
     private static final Logger log = LoggerFactory.getLogger(IngestDb.class);
 
+    /** Values accepted for iot.ingest.synchronous-commit (whitelist: the value is put into SQL). */
+    private static final java.util.Set<String> SYNC_COMMIT_VALUES = java.util.Set.of("off", "local", "remote_write",
+            "remote_apply");
+
     private final JdbcTemplate jdbc;
     private final HikariDataSource pool;
 
@@ -43,6 +47,18 @@ public class IngestDb {
             // instead of blocking a lane for Hikari's default 30 seconds
             cfg.setConnectionTimeout(props.getIngest().getDbTimeoutMs());
             cfg.setInitializationFailTimeout(-1); // the first connection is taken on demand
+            // Telemetry writes must not wait for the WAL to reach the disk (see IotProperties.Ingest): with fsync per
+            // batch the writers spend their time in WALWrite waits and cap the whole ingest pipeline.
+            String syncCommit = props.getIngest().getSynchronousCommit();
+            if (syncCommit != null && !syncCommit.isBlank() && !"on".equalsIgnoreCase(syncCommit)) {
+                if (!SYNC_COMMIT_VALUES.contains(syncCommit.toLowerCase(java.util.Locale.ROOT))) {
+                    throw new IllegalArgumentException("iot.ingest.synchronous-commit must be one of " + SYNC_COMMIT_VALUES
+                            + ", was '" + syncCommit + "'");
+                }
+                cfg.setConnectionInitSql("SET synchronous_commit = " + syncCommit.toLowerCase(java.util.Locale.ROOT));
+                log.info("Ingestion writes run with synchronous_commit={} (a commit does not wait for the WAL fsync)",
+                        syncCommit);
+            }
             // without this the second pool would be invisible: no pending/timeout metrics during a load test
             cfg.setMetricRegistry(meters);
             this.pool = new HikariDataSource(cfg);

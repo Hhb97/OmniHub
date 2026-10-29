@@ -111,9 +111,10 @@ public class TelemetryService {
         this.history = history;
         IotProperties.Batch b = props.getIngest().getBatch();
         this.latestWriter = new ShardedBatchQueue<HistoryStore.Sample>("latest", b.getWorkers(), b.getQueueCapacity(),
-                b.getMaxBatch(), 100, s -> s.deviceId(), this::flushLatest).bind(meters);
+                b.getMaxBatch(), 100, b.getLingerMs(), s -> s.deviceId(), this::flushLatest).bind(meters);
         this.historyWriter = new ShardedBatchQueue<HistoryStore.Sample>("history", b.getHistoryWorkers(),
-                b.getQueueCapacity(), b.getHistoryMaxBatch(), 100, s -> s.deviceId(), this::flushHistory).bind(meters);
+                b.getQueueCapacity(), b.getHistoryMaxBatch(), 100, b.getLingerMs(), s -> s.deviceId(),
+                this::flushHistory).bind(meters);
         this.latestMinIntervalMs = Math.max(0, props.getIngest().getLatestMinIntervalMs());
         if (latestMinIntervalMs > 0) {
             long period = Math.max(100, latestMinIntervalMs / 2);

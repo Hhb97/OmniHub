@@ -111,6 +111,18 @@ public class IotProperties {
         private int dbPool = 12;
         /** wait for a connection at most this long before a batch is given up (ms) */
         private int dbTimeoutMs = 2000;
+        /**
+         * PostgreSQL {@code synchronous_commit} for the ingestion pool only (on/off/local/remote_write/remote_apply).
+         *
+         * <p>{@code off} means a batch commit returns before its WAL is flushed to disk. At a few thousand messages per
+         * second the ingest writers spend most of their time waiting for the WAL group commit (pg_stat_activity
+         * wait_event = WALWrite), and that wait caps the whole ingestion pipeline - the queue fills up, EMQX's session
+         * queue fills up behind it and the broker starts dropping. Telemetry is not audit data: on an operating system
+         * crash the last few hundred milliseconds of latest values, history and message log can be lost, while the
+         * database itself stays consistent (no torn writes). History goes to InfluxDB and is unaffected.
+         * Set to {@code on} to get the previous fully synchronous behaviour back.
+         */
+        private String synchronousCommit = "off";
         private Batch batch = new Batch();
     }
 
@@ -141,6 +153,13 @@ public class IotProperties {
         private int queueCapacity = 200000;
         /** maximum rows written per statement round trip */
         private int maxBatch = 2000;
+        /**
+         * After the first item of a batch is queued, keep collecting for at most this many milliseconds before the
+         * write. One INSERT of 1000 rows costs only slightly more than one of 100, and one HTTP request with 5000
+         * InfluxDB points is far cheaper than 20 requests with 250 - without the linger the batch size settles at
+         * "arrival rate x write duration", which shrinks exactly when the sink gets slower. 0 = write immediately.
+         */
+        private int lingerMs = 50;
         /** maximum samples per history write (InfluxDB likes 5000-10000 points per request) */
         private int historyMaxBatch = 5000;
         /**
