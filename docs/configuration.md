@@ -68,6 +68,14 @@
 | `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | `hash_clientid` | `mqtt.shared_subscription_strategy` | 共享订阅分发策略，见 [ingest.md](ingest.md) §2 |
 | `EMQX_API_KEY` / `EMQX_API_SECRET` | 空 | — | 仅当 EMQX 指标端点需要认证时，由 `deploy/emqx-bootstrap.sh` 填写 |
 
+compose 里还写死了三个安全相关的值，**不读 `.env`**，改它们要直接改 `docker-compose.yml`：
+
+| 写死项 | 值 | 说明 |
+|---|---|---|
+| `EMQX_ALLOW_ANONYMOUS` | `false` | 匿名设备一律拒绝，必须走 HTTP 认证回调 |
+| `EMQX_AUTHORIZATION__NO_MATCH` | `deny` | ACL 无匹配时拒绝（默认是 allow） |
+| `EMQX_DASHBOARD__DEFAULT_PASSWORD` | `${EMQX_DASHBOARD_PASSWORD}` | Dashboard 的 `admin` 密码只来自 `.env` |
+
 > **EMQX 5.7+ 的坑**：共享订阅配置在 `mqtt.*`，不在 `broker.*`。compose 里必须用
 > `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY`。写旧的 `EMQX_BROKER__...` 会被**静默忽略**，
 > 实际保持 `round_robin`。验证：
@@ -114,7 +122,7 @@
 | `SERVER_PORT` | `8080` | compose 里固定 8080（nginx、健康检查、EMQX 回调都用它） |
 | `IOT_TOMCAT_THREADS` | `400` | EMQX 认证回调也走这里 |
 | `IOT_TOMCAT_ACCEPT_COUNT` | `500` | |
-| `IOT_TOMCAT_MAX_KEEPALIVE_REQUESTS` | `1` | `1` = 不因请求数关闭长连接。默认 100 会切断 EMQX 的流水线回调 |
+| `IOT_TOMCAT_MAX_KEEPALIVE_REQUESTS` | `-1` | `-1` = 不按请求数关闭长连接（Tomcat 出厂值是 100）。100 会切断 EMQX 的流水线回调，表现为设备被拒 `NOT_AUTHORIZED` |
 | `IOT_TOMCAT_KEEPALIVE_TIMEOUT` | `120s` | |
 | `IOT_JWT_SECRET` | 空 | 必填（`local` 除外），≥ 32 字符 |
 | `IOT_JWT_TTL_MINUTES` | `120` | |
@@ -217,7 +225,7 @@
 | `IOT_HISTORY_STORE` | `postgres` | `influxdb` | 栈里带了 InfluxDB，历史不占 PG |
 | `IOT_INFLUX_CREATE_DB` | `false` | `true` | 栈里的 Influx 由后端初始化 |
 | `IOT_INFLUX_RETENTION_DAYS` | `0` | `90` | 栈里默认 90 天 |
-| `IOT_INFLUX_URL` | `localhost:8086` | `http://influxdb:8086` | 容器网络 |
+| `IOT_INFLUX_URL` | `http://localhost:8086` | `http://influxdb:8086` | 容器网络 |
 | `IOT_KAFKA_BOOTSTRAP` | `localhost:9092` | `kafka:9092` | 容器网络 |
 | `IOT_DASHBOARD_ZONE` | `UTC` | `.env`（示例 `Asia/Shanghai`） | 看板"今日"口径 |
 | `SERVER_PORT` | `8080` | 固定 `8080` | 容器内必须固定 |
