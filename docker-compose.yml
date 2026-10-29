@@ -1,6 +1,6 @@
 # Production-style stack: PostgreSQL + EMQX + InfluxDB 1.8 + backend + frontend (nginx).
 # Usage: cp .env.example .env && edit .env && docker compose up -d --build
-#        then, once EMQX is up:  sh deploy/emqx-bootstrap.sh   (configures device auth, see docs/deploy-docker.md)
+#        then, once EMQX is up:  sh deploy/emqx-bootstrap.sh   (configures device auth, see docs/deployment.md)
 #
 # Only these ports are published on the host: WEB_PORT (frontend), MQTT_PORT (devices), EMQX_DASHBOARD_PORT,
 # GRAFANA_PORT (monitoring), plus 9100 (node-exporter, host network).
@@ -17,7 +17,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     # The image's defaults (128 MB of shared buffers, 1 GB of WAL between checkpoints, ...) are meant for a laptop.
     # At thousands of messages per second (about 25000 row updates per second) they caused "checkpoints are occurring
-    # too frequently" and backends writing buffers themselves, and the whole write path stalled. See docs/tuning.md.
+    # too frequently" and backends writing buffers themselves, and the whole write path stalled. See docs/ingest.md.
     command:
       - postgres
       - -c
@@ -81,7 +81,7 @@ services:
       # Device authentication / topic ACL are delegated to the backend. They are applied by deploy/emqx-bootstrap.sh
       # (EMQX REST API) after start-up, which is easier to verify and to repair than environment overrides.
       EMQX_AUTHORIZATION__NO_MATCH: deny
-      # Limits for the platform's single subscription, which receives every device message (docs/tuning.md §EMQX).
+      # Limits for the platform's shared subscriptions, which receive every device message (docs/ingest.md §3).
       # With EMQX's defaults (inflight window 32, queue 1000, mailbox 1000) it drops deliveries and EMQX shuts the
       # connection down with "mailbox_overflow" at a few thousand messages per second.
       EMQX_MQTT__MAX_INFLIGHT: ${EMQX_MAX_INFLIGHT:-4096}
@@ -105,7 +105,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # Single-node Kafka in KRaft mode (no ZooKeeper). Only used when IOT_INGEST_MODE=kafka (docs/kafka-ingest.md).
+  # Single-node Kafka in KRaft mode (no ZooKeeper). Only used when IOT_INGEST_MODE=kafka (docs/ingest.md).
   # Not published: the backend and kafka-exporter reach it as kafka:9092 inside the compose network.
   # Retention is capped by size per partition so a load test cannot fill the disk of a small host.
   kafka:
@@ -167,10 +167,10 @@ services:
       IOT_MQTT_HTTP_AUTH_TOKEN: ${IOT_MQTT_HTTP_AUTH_TOKEN:?set IOT_MQTT_HTTP_AUTH_TOKEN in .env}
       # The uplink topics are consumed by N connections in one shared subscription ($share/<group>/...). One
       # connection is one broker session with one delivery queue; at a few thousand messages/second that queue is
-      # what fills up and drops (docs/tuning.md §8). 1 = single connection (no shared subscriptions).
+      # what fills up and drops (docs/ingest.md §3). 1 = single connection (no shared subscriptions).
       IOT_MQTT_INGEST_CONNECTIONS: ${IOT_MQTT_INGEST_CONNECTIONS:-16}
-      # Receive window per connection: throughput = connections x window / ack round trip. Keep it <=
-      # EMQX_MAX_INFLIGHT above (the broker's per-session limit), the smaller of the two wins.
+      # Paho's outbound window (platform -> device commands). The uplink receive window is EMQX_MAX_INFLIGHT
+      # above; this value does not limit broker deliveries.
       IOT_MQTT_MAX_INFLIGHT: ${IOT_MQTT_MAX_INFLIGHT:-4096}
       IOT_MQTT_SHARED_GROUP: ${IOT_MQTT_SHARED_GROUP:-ingest}
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
@@ -184,7 +184,7 @@ services:
       IOT_INFLUX_PASSWORD: ${INFLUX_PASSWORD}
       IOT_INFLUX_CREATE_DB: "true"
       IOT_INFLUX_RETENTION_DAYS: ${IOT_INFLUX_RETENTION_DAYS:-90}
-      # throughput settings (see docs/tuning.md); defaults are fine to start with
+      # throughput settings (see docs/ingest.md and docs/configuration.md); defaults are fine to start with
       IOT_INGEST_MODE: ${IOT_INGEST_MODE:-direct}
       IOT_KAFKA_BOOTSTRAP: kafka:9092
       IOT_KAFKA_TOPIC: ${IOT_KAFKA_TOPIC:-iot-uplink}
@@ -198,12 +198,12 @@ services:
       IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-false}
       IOT_DB_POOL: ${IOT_DB_POOL:-40}
       # Ingestion writes take connections from their own pool, so a dashboard query or a page request can never
-      # take the connection a batch writer needs (see docs/tuning.md). 0 = share IOT_DB_POOL.
+      # take the connection a batch writer needs (see docs/ingest.md). 0 = share IOT_DB_POOL.
       IOT_INGEST_DB_POOL: ${IOT_INGEST_DB_POOL:-12}
       # a batch writer gives up (and counts the batch as dropped) after waiting this long for a connection
       IOT_INGEST_DB_TIMEOUT_MS: ${IOT_INGEST_DB_TIMEOUT_MS:-2000}
       # ingestion writes commit without waiting for the WAL fsync (on = the old, fully synchronous behaviour).
-      # This is what keeps the writers out of pg_stat_activity wait_event=WALWrite; see docs/tuning.md §8.8
+      # This is what keeps the writers out of pg_stat_activity wait_event=WALWrite; see docs/ingest.md
       IOT_INGEST_SYNCHRONOUS_COMMIT: ${IOT_INGEST_SYNCHRONOUS_COMMIT:-off}
       # at most one "latest value" write per device property and interval; 0 = write every report
       IOT_LATEST_MIN_INTERVAL_MS: ${IOT_LATEST_MIN_INTERVAL_MS:-1000}
@@ -240,7 +240,7 @@ services:
     ports:
       - "${WEB_PORT:-8088}:80"
 
-  # ---------------------------------------------------------------- monitoring (docs/monitoring.md)
+  # ---------------------------------------------------------------- monitoring (docs/operations.md)
   prometheus:
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.53.0}
     restart: unless-stopped

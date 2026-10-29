@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  *
  * Why: with one pool the HTTP requests (dashboards, pages) and the batch writers compete for the same connections.
  * A burst of slow read queries can take every connection, the writers wait, their queues grow and finally drop data -
- * that is exactly the stall observed in the load tests (see docs/tuning.md). The pool is created from the primary
+ * that is exactly the stall observed in the load tests (see docs/ingest.md). The pool is created from the primary
  * DataSource's settings, so it works with both the normal profiles and the embedded PostgreSQL of `local`/`test`.
  *
  * Set iot.ingest.db-pool=0 to disable it and share the main pool (previous behaviour).

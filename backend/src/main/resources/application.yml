@@ -113,10 +113,10 @@ iot:
     subscribe-qos: ${IOT_MQTT_SUBSCRIBE_QOS:1}
     # The uplink topics are consumed by this many connections in one shared subscription ($share/<group>/<filter>).
     # One connection is one broker session with one queue: a few thousand messages per second fill it and the broker
-    # starts dropping (docs/tuning.md §8). Set to 1 for brokers without shared subscriptions.
+    # starts dropping (docs/ingest.md §3). Set to 1 for brokers without shared subscriptions.
     ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:16}
-    # Receive window per connection: throughput = connections x max-inflight / ack round trip. Must be <= the
-    # broker's own limit (EMQX_MAX_INFLIGHT, 4096 in docker-compose.yml), the smaller of the two wins.
+    # Paho's outbound window (platform -> device commands). It does not limit what the broker delivers; the uplink
+    # receive window is the broker's mqtt.max_inflight (EMQX_MAX_INFLIGHT in docker-compose.yml).
     max-inflight: ${IOT_MQTT_MAX_INFLIGHT:4096}
     shared-group: ${IOT_MQTT_SHARED_GROUP:ingest}
     # true: the broker keeps no session for this client after it disconnects. The client id is random per start, so a
@@ -157,7 +157,7 @@ iot:
     db-timeout-ms: ${IOT_INGEST_DB_TIMEOUT_MS:2000}
     # PostgreSQL synchronous_commit for the ingestion pool only (on | off | local | remote_write | remote_apply).
     # off: a batch commit no longer waits for the WAL to reach the disk. With fsync per batch the writers sit in
-    # pg_stat_activity WALWrite waits and that wait caps the whole ingestion pipeline (see docs/tuning.md §8.8).
+    # pg_stat_activity WALWrite waits and that wait caps the whole ingestion pipeline (see docs/ingest.md).
     # Trade-off: on an OS crash the last few hundred ms of telemetry writes are lost; the database stays consistent.
     synchronous-commit: ${IOT_INGEST_SYNCHRONOUS_COMMIT:off}
     batch:

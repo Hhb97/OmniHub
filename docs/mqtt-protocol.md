@@ -55,4 +55,15 @@
 `PENDING` 已落库未发布 → `SENT` 已发布到 Broker（不代表设备收到）→ `RECEIVED` 设备确认收到 → `SUCCESS`/`FAILED` 设备返回结果；`TIMEOUT`：超过 `command.timeout.seconds`（默认 30）无终态。设备离线或禁用时下发直接返回 409。
 
 ## 外部 Broker（EMQX）
-`docker-compose.yml` 通过环境变量把 EMQX 的 HTTP 认证与授权指向后端 `/api/mqtt/auth`、`/api/mqtt/acl`（请求头 `X-Broker-Token` = `IOT_MQTT_HTTP_AUTH_TOKEN`），返回 `{"result":"allow|deny"}`。**该配置未在真实 EMQX 上验证**；EMQX 版本不同，配置项名称可能需要调整。
+
+`docker-compose.yml` 把 EMQX 的 HTTP 认证与授权指向后端 `/api/mqtt/auth`、`/api/mqtt/acl`（请求头 `X-Broker-Token` = `IOT_MQTT_HTTP_AUTH_TOKEN`），返回 `{"result":"allow|deny"}`。已在 EMQX 5.7.2 上验证：设备认证、Topic ACL、平台账号 `platform` 都走同一套回调；配置由 `deploy/emqx-bootstrap.sh` 通过 REST API 完成，重复运行安全。
+
+- 授权"无匹配时"为 **deny**；认证/授权结果缓存 10 分钟。
+- 设备被禁用/删除、密钥轮换后，旧连接会在下一次认证或 ACL 检查时被拒；EMQX 不会主动踢掉已连接设备（内置 Broker 才会）。
+- 平台自己的上行消费用共享订阅 `$share/<IOT_MQTT_SHARED_GROUP>/...`，与设备协议无关，设备侧不需要感知。分发策略必须是 `hash_clientid`，见 [ingest.md](ingest.md) §2。
+
+## 限制
+
+- 消息体最大 16KB，必须是 JSON 对象。
+- 仅 MQTT 3.1.1，QoS 0/1；平台侧订阅 QoS 可配（默认 1）。
+- 没有 TLS；公网部署需要在前置代理/负载均衡上终结 TLS。

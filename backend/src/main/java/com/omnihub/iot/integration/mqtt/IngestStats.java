@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
  * - delay = time between the platform receiving the MQTT message and starting to process it. In direct mode that
  *   is the in-memory lane wait; in kafka mode it also includes the Kafka round trip. It does not include DB time.
  * A 1-second sampler keeps the last 60 seconds for the dashboard page; a 10-second log line is written while busy.
- * The same numbers are published to Prometheus (iot_ingest_*, iot_uplink_*), see docs/monitoring.md.
+ * The same numbers are published to Prometheus (iot_ingest_*, iot_uplink_*), see docs/operations.md.
  */
 @Component
 public class IngestStats {

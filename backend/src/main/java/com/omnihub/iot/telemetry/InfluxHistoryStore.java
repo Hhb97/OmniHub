@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * InfluxDB 1.x (tested target: 1.8) history store over the HTTP API.
  * Measurement `device_property`; tags: device_id, identifier; fields: num (float, numeric/boolean values only)
  * and json (the value as JSON text). Writes use line protocol with millisecond precision.
- * Expiry is delegated to an InfluxDB retention policy (see docs/local-infra.md).
+ * Expiry is delegated to an InfluxDB retention policy (see docs/data-model.md).
  *
  * Not exercised against a real InfluxDB in this repository's test run: no instance was available.
  */

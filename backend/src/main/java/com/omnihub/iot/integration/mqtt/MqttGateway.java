@@ -143,9 +143,10 @@ public class MqttGateway implements DownlinkPublisher {
             opts.setCleanSession(cfg.isCleanSession());
             opts.setKeepAliveInterval(30);
             opts.setConnectionTimeout(10);
-            // Receive window of one session. Together with the broker's max_inflight it sets how many QoS1 messages
-            // can be in flight: throughput = connections x window / acknowledgement round trip. At 1024 per session
-            // and 8 sessions the pipeline stalled at about 4.6k msg/s with the window completely full.
+            // Paho's outbound in-flight window: it limits how many QoS1 messages this client may publish without an
+            // acknowledgement (downlink commands). The uplink receive window is the broker's mqtt.max_inflight:
+            // throughput = sessions x broker max_inflight / acknowledgement round trip. At 1024 per session and 8
+            // sessions the pipeline stalled at about 4.6k msg/s with the broker window completely full.
             opts.setMaxInflight(Math.max(1, cfg.getMaxInflight()));
             c.setCallback(new Callback(i));
             clients[i] = c;

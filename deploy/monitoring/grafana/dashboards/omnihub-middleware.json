@@ -1053,7 +1053,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "> EMQX 指标名随版本不同（本看板按 5.8 编写，**未在真实 EMQX 上核对**）。某个面板没有数据时，在 Prometheus 里查 `emqx_` 前缀的指标，对应改一下查询即可。详见 `docs/monitoring.md`。"
+        "content": "> EMQX 指标名随版本不同（本看板按 5.8 编写，**未在真实 EMQX 上核对**）。某个面板没有数据时，在 Prometheus 里查 `emqx_` 前缀的指标，对应改一下查询即可。详见 `docs/operations.md`。"
       }
     },
     {
@@ -2062,7 +2062,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "> InfluxDB 1.8 的 `/metrics` 只提供 Go 进程指标，**没有写入点数 / 序列数**；要看这些，可在 Grafana 里用 InfluxDB 数据源（已配置，名称 “InfluxDB (iot)”）查 `_internal` 库或业务库，详见 `docs/monitoring.md`。"
+        "content": "> InfluxDB 1.8 的 `/metrics` 只提供 Go 进程指标，**没有写入点数 / 序列数**；要看这些，可在 Grafana 里用 InfluxDB 数据源（已配置，名称 “InfluxDB (iot)”）查 `_internal` 库或业务库，详见 `docs/operations.md`。"
       }
     },
     {

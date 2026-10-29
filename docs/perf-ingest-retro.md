@@ -3,6 +3,9 @@
 > 场景：单机 OmniHub（16 核 / 11G 虚拟机），10 000 台设备每台每秒上报 1 条属性消息（每条 7 个属性，约 10k msg/s、70k 属性点/s）。
 > 分支：`perf/throughput-bottlenecks`。四个修复，三笔提交。
 
+> **这是一份历史记录，不是当前配置说明。** 文中"当时的默认值"（4 连接、1024 窗口、消息日志开）已经被后续实验改掉；
+> 当前的默认值、容量公式和配置项见 [configuration.md](configuration.md) 与 [ingest.md](ingest.md)。
+
 ## 环境与前置条件
 
 复现或对比本文数字之前，请先对齐下面这些条件，它们会直接改变结果。
@@ -85,7 +88,7 @@ curl -s localhost:8080/actuator/prometheus | grep -E '^iot_batch_(size_sum|flush
 
 修复：`IOT_MQTT_INGEST_CONNECTIONS` 条连接全部订阅同一个 `$share/ingest/...` 共享订阅；EMQX 分发策略 `hash_clientid` 保证同一设备固定落到同一连接（保序），下游 Kafka 仍用 `productKey.deviceKey` 做 key。broker 不支持 `$share` 时自动降级单连接并打 error，避免变成 N 份重复投递。
 
-> 补充（后来才发现）：`hash_clientid` 在 EMQX 5.7+ 的配置路径是 `mqtt.shared_subscription_strategy`，容器变量必须写成 `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY`。最初写的 `EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY` 是 5.6 及更早的位置，在 5.7 上被**静默忽略**，实际一直是 `round_robin`。`docker-compose.yml` 已修正，`docs/tuning.md` §8 记了验证命令。
+> 补充（后来才发现）：`hash_clientid` 在 EMQX 5.7+ 的配置路径是 `mqtt.shared_subscription_strategy`，容器变量必须写成 `EMQX_MQTT__SHARED_SUBSCRIPTION_STRATEGY`。最初写的 `EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY` 是 5.6 及更早的位置，在 5.7 上被**静默忽略**，实际一直是 `round_robin`。`docker-compose.yml` 已修正，[ingest.md](ingest.md) §2 记了验证命令。
 
 ### 3.2 一条消息写 7 行最新值（提交 `8d2e8bb`）
 
@@ -134,7 +137,7 @@ curl -s localhost:8080/actuator/prometheus | grep -E '^iot_batch_(size_sum|flush
 - 默认配置（写消息日志、4 条连接）的复测结果见 §7：只有 2.0k msg/s 且会丢数据。9.4k/s 只在"关日志 + 16 连接"下成立，不要当成默认配置的承诺值。
 - `history` 写入 InfluxDB 的单点能力约 16 万点/s（2 个 writer，每批 2 226 点 / 27.9ms），高于当前 70k 点/s 的需求，但余量不大；再翻倍设备量要加 writer 或换批量协议。
 - `synchronous_commit=off` 的取舍按业务定：如果消息日志要当审计证据，建议只对 latest/history 关闭，把消息日志留在独立池上同步提交。
-- 压测脚本、开关脚本和采样器在 `scripts/` 与部署机上，属于一次性工具；`docs/tuning.md` §8 保留了逐轮变更记录。
+- 压测脚本、开关脚本和采样器在 `scripts/` 与部署机上，属于一次性工具；[ingest.md](ingest.md) 和本文保留了逐轮变更记录。
 
 ## 7. 默认配置复测：瓶颈换成了消息日志
 
@@ -386,4 +389,4 @@ bogus_value                                                        -> 启动失�
 ```
 
 另外记一条运维事实：**broker 重启后要 129 秒才回到 16/16 会话**（Paho 退避默认封顶 128 秒），
-满载时这段窗口足以丢数据。原因、实测时间线和一行修复方案见 `docs/tuning.md` §8.10——目前**未改**，只记档。
+满载时这段窗口足以丢数据。原因、实测时间线和一行修复方案见 [operations.md](operations.md) §3.1——目前**未改**，只记档。

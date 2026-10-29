@@ -3,7 +3,7 @@
 // the script reports it; remove the old entry in the dashboard and re-run.
 //
 // NOT verified against a real EMQX in this repository's test run. EMQX 4.x uses a different mechanism
-// (emqx_auth_http plugin), see docs/local-infra.md.
+// (emqx_auth_http plugin), see docs/deployment.md.
 //
 // Env (required): EMQX_DASHBOARD_USER, EMQX_DASHBOARD_PASSWORD, IOT_MQTT_HTTP_AUTH_TOKEN
 // Env (optional): EMQX_API (default http://localhost:18083), IOT_BACKEND_URL (URL EMQX uses to reach the backend,

@@ -4,7 +4,7 @@
 
 作用：读取“批量新增设备”导出的 **设备 JSON 文件**，**每个设备一个真实 MQTT 连接**，按固定速率上报属性数据，并统计发送/确认速率、确认延迟、认证失败、重连。不访问数据库。使用 HiveMQ MQTT 客户端（Netty 异步，连接多时比 Paho 省线程）。
 
-> 状态：已编译通过，**尚未对真实环境跑通验证**。第一次请先用少量设备（`--limit 10`）试跑。
+> 状态：已在 16 核 VM 上跑通，单进程最多 5 000 台设备（5 000 条连接）、15k msg/s 目标速率持续 120 秒；broker 零丢弃，后端处理量与 EMQX `messages_sent` 完全一致（客户端自身仍有约 2.5% 的长尾失败，见 §"复现 15k"）。第一次仍建议先用少量设备（`--limit 10`）试跑。
 
 ## 0. 用脚本一次性创建产品、物模型和大量设备（推荐）
 `scripts/loadtest-setup.mjs`（需要 Node 18+）通过平台接口：创建产品（已存在则复用）→ 保存物模型（默认 `backend/src/test/resources/loadtest/thing-model.json`）→ 分批批量创建设备 → 生成压测程序要读的设备 JSON。
@@ -59,6 +59,22 @@ IDEA：运行 `MqttLoadRunner`，在 Program arguments 填：
 ```
 设备文件默认读运行目录下的 `devices.json`（或环境变量 `LT_DEVICES`），不想每次传参可以放一份在那里。
 
+### 复现 15k msg/s
+
+1. 建 5 000 台设备：`node scripts/loadtest-setup.mjs --base http://<主机>:8088 --broker mqtt://<主机>:1883 --count 5000`
+2. 确认后端是 16 会话：`IOT_MQTT_INGEST_CONNECTIONS=16`、`EMQX_MAX_INFLIGHT=4096`，且 `IOT_LOG_OK_PROPERTY=false`。
+3. 重启后端，确认 `iot_mqtt_gateway_connections` 达到 16。
+4. 跑：
+
+   ```powershell
+   .\scripts\loadtest.ps1 --devices backend\devices-5000.local.json --broker mqtt://<主机>:1883 `
+     --rate 3 --duration 120 --ramp 100 --report 1 --csv .\lt-15k.csv
+   ```
+
+5. 取**同一时间窗口**对比：后端 `iot_ingest_processed_total` 的增量 vs EMQX `messages_sent` 的增量（后端重启会归零，EMQX 不会）。
+6. 预期：EMQX 各会话 mqueue 全程 0、总在途峰值远低于 `16 × 4096`；后端处理量等于 `messages_sent`、broker 零丢弃。客户端可能有 2–3% 的长尾 `failed`（stage U 是 36 584 次、ackP95 3.56 s），这是客户端在长尾延迟下打满自己的发送节拍，不是后端欠账；要压到 0 应查 ack 长尾，而不是继续加窗口。
+7. 若每个属性都写历史，15k × 7 = 105k 点/s，`IOT_BATCH_HISTORY_WORKERS=2` 会丢点（约 89k/s 上限）；要全量保存就调到 4。只看接入链路时可以直接看 `iot_batch_queue_dropped_total{queue="history"}`。
+
 ## 参数（均可写进配置文件）
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -81,7 +97,7 @@ IDEA：运行 `MqttLoadRunner`，在 Program arguments 填：
 1. **看压测输出里的连接统计**：`pending` = 已发起但没连上的数量，`connFail`/`lost` = 连接失败/丢失次数，下面会打印最多的 3 种原因（`connect problem xN: …`）。原因是 `Connection refused / timed out` 偏向服务端或网络，`Cannot assign requested address / Address already in use` 是**压测机端口用完**，`NOT_AUTHORIZED` 是认证被拒。
 2. **压测机端口**：Windows 默认只有 16384 个临时端口（`netsh int ipv4 show dynamicport tcp`），关闭的连接还要 TIME_WAIT 约 2 分钟。连续压测、上一轮刚停，端口就会被占。两轮之间等 2～4 分钟，或（管理员）`netsh int ipv4 set dynamicport tcp start=10000 num=55000` 后重启压测；更大规模用多台压测机。
 3. **EMQX 回调**：HTTP 源连接池（你截图 8）调到 32～64，请求超时 5～10 秒，开授权缓存；连接速率 `--ramp` 从 50 起步（一万个需要约 200 秒）。EMQX 日志里 authn/authz 超时说明回调跟不上。
-4. **EMQX 所在虚拟机**：`ulimit -n` ≥ 连接数×2、内存 ≥ 4GB（见 `docs/tuning.md`）。
+4. **EMQX 所在虚拟机**：`ulimit -n` ≥ 连接数×2、内存 ≥ 4GB（见 [ingest.md](ingest.md) §3）。
 5. **对比实验**：在 EMQX 里临时把认证/授权换成内置的（或临时允许匿名，仅限内网测试），再跑一次。能到 10000 说明瓶颈在回调；仍然到不了，说明是 EMQX/系统/网络限制。
 6. **看 EMQX Dashboard 的连接数**，和压测输出的 `connected` 对比：一致说明 EMQX 就只收到了这么多；Dashboard 更多说明是压测端统计问题。
 
@@ -96,6 +112,6 @@ IDEA：运行 `MqttLoadRunner`，在 Program arguments 填：
 
 ## 注意
 - `id` 为 `设备序号-序号`，不会被平台的消息去重吞掉；每个设备的上报带随机相位，不会所有设备同一毫秒发送。
-- 压测会真实写入数据库（历史、通信记录、最新值），结束后注意清理；通信记录每条一行，数据量增长很快。
+- 压测会真实写入数据库（历史、最新值；通信记录默认只记失败/事件/状态/指令），结束后注意清理。历史每个样本一行，数据量增长很快；只想看接入能力时可以把 `IOT_HISTORY_STORE` 切到 InfluxDB 或降低 `--rate`。
 - 本机文件句柄和线程有限，单进程几千连接以上请用 `--shard` 开多个进程，或多台机器分担。
 - 告警规则、离线规则也会生效；压测结束设备断开会触发“设备离线”告警。

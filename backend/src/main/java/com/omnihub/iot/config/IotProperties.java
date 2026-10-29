@@ -55,13 +55,12 @@ public class IotProperties {
          */
         private int ingestConnections = 16;
         /**
-         * Receive window of one ingestion connection: how many QoS1 messages the broker may hand to it before it has
-         * to be acknowledged. At a few thousand messages per second per session this is the real ceiling of the
-         * uplink: {@code throughput = connections x maxInflight / acknowledgement round trip}. Measured: 8 connections
-         * x 1024 in flight stalled at 4.6k msg/s with every session's window full and 400k messages queued at the
-         * broker. Raise it together with the broker's own limit (EMQX_MQTT__MAX_INFLIGHT, here EMQX_MAX_INFLIGHT) -
-         * the smaller of the two wins. 4096 matches the broker default in docker-compose.yml; 1000 (the Paho
-         * default) is still enough for a few thousand messages per second.
+         * Paho's outbound in-flight window: how many QoS1 messages this client may publish before they are
+         * acknowledged. It applies to downlink commands, not to the uplink: the broker decides how many messages it
+         * hands to a subscriber, through its own {@code mqtt.max_inflight} (EMQX_MAX_INFLIGHT, 4096 in
+         * docker-compose.yml). Measured uplink ceiling is therefore
+         * {@code sessions x broker max_inflight / acknowledgement round trip}: 8 x 1024 stalled at 4.6k msg/s with
+         * every session full, 16 x 4096 sustained 15k msg/s with the broker queue empty.
          */
         private int maxInflight = 4096;
         /**
