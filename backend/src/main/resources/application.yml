@@ -114,10 +114,10 @@ iot:
     # The uplink topics are consumed by this many connections in one shared subscription ($share/<group>/<filter>).
     # One connection is one broker session with one queue: a few thousand messages per second fill it and the broker
     # starts dropping (docs/tuning.md §8). Set to 1 for brokers without shared subscriptions.
-    ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:4}
+    ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:16}
     # Receive window per connection: throughput = connections x max-inflight / ack round trip. Must be <= the
-    # broker's own limit (EMQX_MAX_INFLIGHT, default 1024), the smaller of the two wins. 1000 = Paho default.
-    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:1000}
+    # broker's own limit (EMQX_MAX_INFLIGHT, 4096 in docker-compose.yml), the smaller of the two wins.
+    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:4096}
     shared-group: ${IOT_MQTT_SHARED_GROUP:ingest}
     # true: the broker keeps no session for this client after it disconnects. The client id is random per start, so a
     # persistent session could never be resumed and every restart would leave an orphan session that keeps queueing
@@ -172,7 +172,9 @@ iot:
       workers: ${IOT_BATCH_WORKERS:4}
       history-workers: ${IOT_BATCH_HISTORY_WORKERS:2}
       log-workers: ${IOT_BATCH_LOG_WORKERS:2}
-      log-ok-property: ${IOT_LOG_OK_PROPERTY:true}
+      # Off: iot_device_message_log is a full detail log that caps ingest at ~4.2k rows/s and grows ~13 GB/hour at
+      # 10k msg/s (docs/perf-ingest-retro.md §7). The dashboard trend under-counts while this is off.
+      log-ok-property: ${IOT_LOG_OK_PROPERTY:false}
     kafka:
       topic: ${IOT_KAFKA_TOPIC:iot-uplink}
       group-id: ${IOT_KAFKA_GROUP:iot-platform}

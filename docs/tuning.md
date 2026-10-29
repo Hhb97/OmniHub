@@ -33,7 +33,7 @@
 | `IOT_BATCH_QUEUE` | 200000 | 每个批处理队列的容量 |
 | `IOT_BATCH_MAX` | 2000 | 通信记录 / 最新值每批最多行数 |
 | `IOT_BATCH_HISTORY_MAX` | 5000 | 历史写入每批最多点数（Influx 建议 5000～10000） |
-| `IOT_LOG_OK_PROPERTY` | true | 是否记录成功的属性上报 |
+| `IOT_LOG_OK_PROPERTY` | false | 是否记录成功的属性上报；false = 不写 `iot_device_message_log`（那条表是全量明细，10k msg/s 时约 13 GB/小时，见 §8 / 复盘 §7） |
 | `IOT_INGEST_LANES` | 0（自动） | MQTT 处理线程数 |
 | `IOT_INGEST_LANE_QUEUE` | 20000 | 每条处理线程队列长度 |
 | `IOT_MQTT_SUBSCRIBE_QOS` | 1 | 平台订阅上行 topic 的 QoS |
@@ -90,7 +90,7 @@
 
 | 变量 | 默认 | EMQX 原默认 |
 |---|---|---|
-| `EMQX_MAX_INFLIGHT` | 1024 | 32 |
+| `EMQX_MAX_INFLIGHT` | 4096 | 32 |
 | `EMQX_MAX_MQUEUE_LEN` | 100000 | 1000 |
 | `EMQX_MAX_MAILBOX_SIZE` | 100000 | 1000 |
 | `EMQX_MAX_HEAP_SIZE` | 512MB | 32MB |
@@ -141,8 +141,8 @@
 | `IOT_DASHBOARD_CACHE_SECONDS` | 10 | 看板聚合缓存时间；0 = 每次查询 |
 | `IOT_SCHEDULER_THREADS` | 4 | `spring.task.scheduling.pool.size` |
 | `IOT_LANE_OVERFLOW` | block | 处理队列满时：block（背压）/ drop（丢弃并计数） |
-| `IOT_MQTT_INGEST_CONNECTIONS` | 4 | 共享订阅的上行连接数；1 = 单连接（broker 不支持 `$share` 时） |
-| `IOT_MQTT_MAX_INFLIGHT` | 1000 | 每条上行连接的在途窗口（Paho `maxInflight`）；必须 ≤ `EMQX_MAX_INFLIGHT`，两者取小 |
+| `IOT_MQTT_INGEST_CONNECTIONS` | 16 | 共享订阅的上行连接数；1 = 单连接（broker 不支持 `$share` 时） |
+| `IOT_MQTT_MAX_INFLIGHT` | 4096 | 每条上行连接的在途窗口（Paho `maxInflight`）；必须 ≤ `EMQX_MAX_INFLIGHT`，两者取小 |
 | `IOT_MQTT_SHARED_GROUP` | ingest | 共享订阅组名（`$share/<group>/<filter>`） |
 | `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | hash_clientid | EMQX 分发策略；按发布者 clientid 哈希，保证同一设备固定落到一条连接 |
  
@@ -226,7 +226,7 @@ CREATE TABLE iot_device_latest (
 
 完整的定位过程、七步排除法与前后对比图见 [`docs/perf-ingest-retro.md`](perf-ingest-retro.md)。
 
-**但 9.4k/s 只在"关消息日志 + 多连接"下成立。** 关日志后 8 条连接同样跑满同一档位（`failed=0`、ackP95 17ms、三个批队列零丢弃、latest 33.6ms/批、history 24.2ms/批），8 与 16 等价；默认的 4 条是否够用没测。恢复出厂默认（`IOT_LOG_OK_PROPERTY=true`、4 条连接）复测同一档位只有 **2.0k msg/s**、客户端失败 39 990 条：瓶颈换成了 `iot_device_message_log`——每行 1 次堆写 + 3 次索引写 + payload，实测上限约 4.2k 行/s（166.8 行/79.75 ms × 2 线程），且 3 小时就攒到 1634 万行 / 6.2 GB。这条表是全量明细，10k msg/s 时约 13 GB/小时，靠调参解决不了，只能关掉、采样、或把明细移出 PostgreSQL。详见复盘的 §7。
+**但 9.4k/s 只在"关消息日志 + 多连接"下成立。** 关日志后 8 条连接同样跑满同一档位（`failed=0`、ackP95 17ms、三个批队列零丢弃、latest 33.6ms/批、history 24.2ms/批），8 与 16 等价；默认的 4 条是否够用没测。恢复成**当时**的出厂默认（`IOT_LOG_OK_PROPERTY=true`、4 条连接）复测同一档位只有 **2.0k msg/s**、客户端失败 39 990 条：瓶颈换成了 `iot_device_message_log`——每行 1 次堆写 + 3 次索引写 + payload，实测上限约 4.2k 行/s（166.8 行/79.75 ms × 2 线程），且 3 小时就攒到 1634 万行 / 6.2 GB。这条表是全量明细，10k msg/s 时约 13 GB/小时，靠调参解决不了，只能关掉、采样、或把明细移出 PostgreSQL。详见复盘的 §7。
 
 ### 8.9 上行侧：每条连接的在途窗口
 
@@ -239,15 +239,17 @@ CREATE TABLE iot_device_latest (
 平台消费能力 ≈ 连接数 × 每连接在途窗口 ÷ 单条消息的确认往返
 ```
 
-所以要同时动两个乘数：
+所以要同时动两个乘数（下表的"默认"一列已经是调好后的仓库默认值）：
 
-| 位置 | 变量 | 出厂 | 15k 档建议 |
+| 位置 | 变量 | 默认 | 15k 档实测值 |
 |---|---|---|---|
-| 平台（Paho） | `IOT_MQTT_MAX_INFLIGHT` | 1000 | 4096 |
-| broker（EMQX） | `EMQX_MAX_INFLIGHT` | 1024 | 4096（**必须 ≥ 上面那个**） |
-| 平台 | `IOT_MQTT_INGEST_CONNECTIONS` | 4 | 16 |
+| 平台（Paho） | `IOT_MQTT_MAX_INFLIGHT` | 4096 | 4096 |
+| broker（EMQX） | `EMQX_MAX_INFLIGHT` | 4096 | 4096（**必须 ≥ 上面那个**） |
+| 平台 | `IOT_MQTT_INGEST_CONNECTIONS` | 16 | 16 |
 
 `IOT_MQTT_MAX_INFLIGHT` 是新增项（`iot.mqtt.max-inflight`），单边调大没有效果，**两边取小**。
+仓库默认已按 15k 档调好（`.env.example`、`docker-compose.yml`、`application.yml` 三处一致）；
+小部署可以降到 4 × 1024，两条都在 `docs/perf-ingest-retro.md` §8.6 的配置表里。
 
 实测（5 000 台 × 3 条/秒 = 15k msg/s，120s，16×4096）：EMQX 上 mqueue **全程为 0**、总在途只用到 4 879/65 536，
 后端处理 1 574 498 条 = EMQX `messages_sent` 1 574 498 条，broker 侧零丢弃；同样的负载在 8×1024 下后端只能到 4.6k/s。

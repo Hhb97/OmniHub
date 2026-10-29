@@ -110,7 +110,7 @@ for (每个通过校验的属性) {
 | `IOT_BATCH_QUEUE` | 200000 | `latest`、`history`、`message-log` 每个队列的容量（条）。占用内存与容量成正比（每条几百字节量级，未实测）。 |
 | `IOT_BATCH_MAX` | 2000 | `latest`、`message-log` 每批最多条数 |
 | `IOT_BATCH_HISTORY_MAX` | 5000 | `history` 每批最多条数（Influx 官方建议每次 5000～10000 点） |
-| `IOT_LOG_OK_PROPERTY` | true | 是否记录成功的属性上报 |
+| `IOT_LOG_OK_PROPERTY` | false | 是否记录成功的属性上报（默认关：这条表是全量明细，10k msg/s 时约 13 GB/小时，见 `docs/perf-ingest-retro.md` §7） |
 | `iot.history.store` | postgres | 历史存储：`postgres` 或 `influxdb` |
 | `iot.influxdb.*` | 见 `docs/local-infra.md` | 地址、库、认证、保留策略 |
 

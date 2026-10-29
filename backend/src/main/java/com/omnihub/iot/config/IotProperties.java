@@ -51,17 +51,19 @@ public class IotProperties {
          * (then closes the connection with mailbox_overflow). Several connections joining a shared subscription make
          * the broker spread the messages, so neither the session queue nor the single Paho callback thread is a
          * bottleneck. 1 = single connection (a broker without shared subscriptions), 0 = same as 1.
+         * <p>16 is the measured profile: 16 x 4096 in flight sustained a full 15k msg/s with the broker queue empty.
          */
-        private int ingestConnections = 4;
+        private int ingestConnections = 16;
         /**
          * Receive window of one ingestion connection: how many QoS1 messages the broker may hand to it before it has
          * to be acknowledged. At a few thousand messages per second per session this is the real ceiling of the
          * uplink: {@code throughput = connections x maxInflight / acknowledgement round trip}. Measured: 8 connections
          * x 1024 in flight stalled at 4.6k msg/s with every session's window full and 400k messages queued at the
          * broker. Raise it together with the broker's own limit (EMQX_MQTT__MAX_INFLIGHT, here EMQX_MAX_INFLIGHT) -
-         * the smaller of the two wins. 1000 is the Paho default and stays a safe value for small deployments.
+         * the smaller of the two wins. 4096 matches the broker default in docker-compose.yml; 1000 (the Paho
+         * default) is still enough for a few thousand messages per second.
          */
-        private int maxInflight = 1000;
+        private int maxInflight = 4096;
         /**
          * Shared-subscription group ({@code $share/<group>/<filter>}). All ingestion connections join it, so every
          * message is delivered to exactly one of them. Empty = plain subscriptions (only useful with 1 connection,
@@ -179,7 +181,7 @@ public class IotProperties {
         private int historyWorkers = 2;
         private int logWorkers = 2;
         /** false = do not log successful property reports in the communication log (the dashboard trend needs them) */
-        private boolean logOkProperty = true;
+        private boolean logOkProperty = false;
     }
 
     @Data

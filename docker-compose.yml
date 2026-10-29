@@ -84,7 +84,7 @@ services:
       # Limits for the platform's single subscription, which receives every device message (docs/tuning.md §EMQX).
       # With EMQX's defaults (inflight window 32, queue 1000, mailbox 1000) it drops deliveries and EMQX shuts the
       # connection down with "mailbox_overflow" at a few thousand messages per second.
-      EMQX_MQTT__MAX_INFLIGHT: ${EMQX_MAX_INFLIGHT:-1024}
+      EMQX_MQTT__MAX_INFLIGHT: ${EMQX_MAX_INFLIGHT:-4096}
       EMQX_MQTT__MAX_MQUEUE_LEN: ${EMQX_MAX_MQUEUE_LEN:-100000}
       EMQX_FORCE_SHUTDOWN__MAX_MAILBOX_SIZE: ${EMQX_MAX_MAILBOX_SIZE:-100000}
       EMQX_FORCE_SHUTDOWN__MAX_HEAP_SIZE: ${EMQX_MAX_HEAP_SIZE:-512MB}
@@ -166,9 +166,10 @@ services:
       # The uplink topics are consumed by N connections in one shared subscription ($share/<group>/...). One
       # connection is one broker session with one delivery queue; at a few thousand messages/second that queue is
       # what fills up and drops (docs/tuning.md §8). 1 = single connection (no shared subscriptions).
-      IOT_MQTT_INGEST_CONNECTIONS: ${IOT_MQTT_INGEST_CONNECTIONS:-4}
-      # receive window per connection; keep it <= EMQX_MAX_INFLIGHT (the broker's per-session limit)
-      IOT_MQTT_MAX_INFLIGHT: ${IOT_MQTT_MAX_INFLIGHT:-1000}
+      IOT_MQTT_INGEST_CONNECTIONS: ${IOT_MQTT_INGEST_CONNECTIONS:-16}
+      # Receive window per connection: throughput = connections x window / ack round trip. Keep it <=
+      # EMQX_MAX_INFLIGHT above (the broker's per-session limit), the smaller of the two wins.
+      IOT_MQTT_MAX_INFLIGHT: ${IOT_MQTT_MAX_INFLIGHT:-4096}
       IOT_MQTT_SHARED_GROUP: ${IOT_MQTT_SHARED_GROUP:-ingest}
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
       IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
@@ -190,7 +191,9 @@ services:
       IOT_KAFKA_PARTITIONS: ${IOT_KAFKA_PARTITIONS:-8}
       IOT_KAFKA_ACKS: ${IOT_KAFKA_ACKS:-1}
       IOT_METRICS_TOKEN: ${IOT_METRICS_TOKEN:?set IOT_METRICS_TOKEN in .env}
-      IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-true}
+      # Off: that table is a full detail log and caps ingest at ~4.2k rows/s / grows ~13 GB per hour at 10k msg/s
+      # (docs/perf-ingest-retro.md §7). Turn it on only for small deployments or when auditing every report matters.
+      IOT_LOG_OK_PROPERTY: ${IOT_LOG_OK_PROPERTY:-false}
       IOT_DB_POOL: ${IOT_DB_POOL:-40}
       # Ingestion writes take connections from their own pool, so a dashboard query or a page request can never
       # take the connection a batch writer needs (see docs/tuning.md). 0 = share IOT_DB_POOL.

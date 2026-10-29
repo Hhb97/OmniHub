@@ -7,7 +7,7 @@
 
 ## 0. 结论
 
-| 指标 | 修复前 | 修复后<br>（关日志 + 16 连接） | 修复后<br>（默认：写日志 + 4 连接） |
+| 指标 | 修复前 | 修复后<br>（关日志 + 16 连接） | 修复后<br>（当时默认：写日志 + 4 连接） |
 |---|---|---|---|
 | 后端实际处理 | 约 2.6k msg/s（随检查点抖动） | 9.4k msg/s（跟得上 10k 档位） | **2.0k msg/s** |
 | 客户端 ack P95 | 9.8 s | 19 ms | 10.1 s |
@@ -16,7 +16,7 @@
 | 后端批队列丢弃 | history 88.8 万行 | 0 | latest 43.7 万、history 29.3 万 |
 | latest 单条写入能力 | 约 2.7 万行/s | 约 10.7 万行/s | 约 1.8 万行/s |
 
-**三列必须一起看。** 只有"关消息日志 + 多连接"这一组跑到 8–9.4k/s；出厂默认（写消息日志、4 条连接）仍只有 2.0k/s 且会丢数据——默认配置的瓶颈已经不是本文修的四个点，而是"每条成功上报都往 PostgreSQL 写一行日志"本身，见 §7。关日志后 8 条与 16 条连接等价（都跑满、零失败），说明 8 条已经够用。
+**三列必须一起看。** 只有"关消息日志 + 多连接"这一组跑到 8–9.4k/s；当时的出厂默认（写消息日志、4 条连接）仍只有 2.0k/s 且会丢数据——默认配置的瓶颈已经不是本文修的四个点，而是"每条成功上报都往 PostgreSQL 写一行日志"本身，见 §7。关日志后 8 条与 16 条连接等价（都跑满、零失败），说明 8 条已经够用。
 
 四个瓶颈依次暴露，修掉前一个才会看到后一个——这也解释了为什么"只改一处"的压测结论经常是错的。
 
@@ -122,7 +122,7 @@ curl -s localhost:8080/actuator/prometheus | grep -E '^iot_batch_(size_sum|flush
 
 ## 7. 默认配置复测：瓶颈换成了消息日志
 
-把 VM 的 `.env` 恢复成出厂默认（`IOT_LOG_OK_PROPERTY=true`、`IOT_MQTT_INGEST_CONNECTIONS=4`）后重启后端，用完全相同的 10k×1、120s 脚本再跑一次（stage Q）：
+把 VM 的 `.env` 恢复成**当时的**出厂默认（`IOT_LOG_OK_PROPERTY=true`、`IOT_MQTT_INGEST_CONNECTIONS=4`）后重启后端，用完全相同的 10k×1、120s 脚本再跑一次（stage Q）：
 
 ```
 sent=834 540  acked=753 923  failed=39 990
@@ -164,7 +164,7 @@ iot_device_message_log: 16 340 297 行 / 6 192 MB
 
 ### 7.3 结论与建议（按代价从低到高）
 
-1. **默认关掉"每条成功上报都写日志"**（`IOT_LOG_OK_PROPERTY=false`）。代价：看板的"今日消息数"与趋势会少算——这已经是现有开关的已知行为，`.env.example` 里有说明。仅此一项，stage P 就在 16 连接下跑满 9.4k/s；4 连接下的组合本轮没测（见下表）。
+1. **默认关掉"每条成功上报都写日志"**（`IOT_LOG_OK_PROPERTY=false`，**仓库默认值已经改为 false**）。代价：看板的"今日消息数"与趋势会少算——这已经是现有开关的已知行为，`.env.example` 里有说明。仅此一项，stage P 就在 16 连接下跑满 9.4k/s；4 连接下的组合本轮没测（见下表）。
 2. **保留日志但按设备采样**：每个设备每 N 秒最多留一条（和 §3.3 的 latest 采样同一个思路），10k 设备 / 30s = 333 行/s，写入量可以忽略，趋势仍然有形状（但是"抽样趋势"）。
 3. **改表形态**：`created_at` 索引换 BRIN（追加写 + 范围查询，体积约为 B-tree 的 1/100）、payload 另存、表按天分区或改 `UNLOGGED`。这能把上限从 4.2k 拉到 8k 量级，仍然不够 10k × 1 条/秒。
 4. **根本解**：消息明细不进 PostgreSQL——写 Kafka / InfluxDB / 对象存储，PG 只保留"每设备每分钟计数"这类聚合行（10k 设备 = 167 行/s）。
@@ -258,8 +258,8 @@ accept/scheduler 被拖慢（264 次长调度）。**12k 其实也没过**：inf
 ```yaml
 iot:
   mqtt:
-    ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:4}
-    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:1000}   # 新增，Paho 默认值
+    ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:16}
+    max-inflight: ${IOT_MQTT_MAX_INFLIGHT:4096}   # 新增；原来是硬编码 1000
 ```
 
 ```java
@@ -267,7 +267,8 @@ opts.setMaxInflight(Math.max(1, cfg.getMaxInflight()));   // 原来是硬编码 
 ```
 
 broker 侧用已有的 `EMQX_MAX_INFLIGHT`（→ `EMQX_MQTT__MAX_INFLIGHT`）。**两者取小**：只调大一边不会有效果，
-这是本节能给出的最实用的一条提醒。
+这是本节能给出的最实用的一条提醒。`.env.example`、`docker-compose.yml` 和 `application.yml` 的默认值已经
+统一成 16 / 4096 / 4096（也就是本节验证过的那一档），所以全新部署不需要再手动调。
 
 ### 8.4 结果：16 会话 × 4096 窗口跑 15k
 
@@ -325,10 +326,14 @@ metrics 里 history 的两个 shard 就是这两个 worker），所以只改这�
 
 | 配置 | 目标速率 | 结果 | 建议 |
 |---|---|---|---|
-| 8 连接 × 1024 | 10k | 通过，零失败 | 10k 以下够用 |
+| 8 连接 × 1024 | 10k | 通过，零失败 | 10k 以下够用（想省连接数就用这档） |
 | 8 连接 × 1024 | ≥12k | 上限 8.8k，会丢 | **不要用** |
-| 16 连接 × 4096 | 15k | broker 零丢弃、后端全量接收 | **推荐给 15k 档** |
+| **16 连接 × 4096** | 15k | broker 零丢弃、后端全量接收 | **已设为仓库默认值** |
 | 16 连接 × 4096 | 15k + 2 个 history writer | history 丢 153 万点 | 需 `IOT_BATCH_HISTORY_WORKERS=4` |
+
+配套改掉的默认值：`.env.example`（16 / 4096 / `EMQX_MAX_INFLIGHT=4096`）、`docker-compose.yml` 的
+`:-` 兜底值、`application.yml` 与 `IotProperties` 的字段默认值，以及消息日志开关 `IOT_LOG_OK_PROPERTY`
+（`true` → `false`，理由见 §7）。全新部署开箱就是本节验证过的这一档。
 
 一条可以带走的经验：**"瓶颈在哪"要看相邻两层之间谁在积压。** 这次下游（PG、Kafka、批队列）全部干净，
 唯一的积压出现在 broker 的会话队列里，那答案就只能是窗口与确认往返——继续优化数据库不会有任何收益。
