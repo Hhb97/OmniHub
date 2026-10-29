@@ -214,4 +214,15 @@ CREATE TABLE iot_device_latest (
 - Flyway 启动时自动把旧数据聚合过去（`jsonb_object_agg`），`/devices/{id}/latest` 的返回结构不变。
 - 注意：最新值已经不再"每条都写"（采样 + 每设备一行），它只是当前快照；审计数据仍看历史库。
 
+### 8.8 写库侧：WAL 刷盘与批次 linger
+
+修完 8.5/8.7 后，"1 万台 × 1 条/秒"仍然卡在约 2.6k msg/s，但后端线程栈全是空闲（CPU 0.6 核），PG 却 300–500% 且 `pg_stat_activity.wait_event` 反复是 `WALWrite`。两个原因叠加：
+
+1. **每批 commit 都在等 WAL 落盘。** 只对 ingestion 连接池设置 `SET synchronous_commit = off`（`iot.ingest.synchronous-commit`，取值 `off|local|remote_write|remote_apply|on`，默认 `off`）。代价是操作系统崩溃时最后几百毫秒的最新值/消息日志可能丢失，数据库本身一致；`on` 可恢复旧行为。
+2. **批次太小。** 批量 = 到达速率 × 上一次写入耗时：写入越慢 → 批越小 → 每行摊的固定开销越大。`BatchQueue` 新增 `lingerMs`（`iot.ingest.batch.linger-ms`，默认 50）：第一批到达后继续攒 50ms 再写。latest 从 135 行/24ms 变成 981 行/36ms，history 从 221 点/15ms 变成 2226 点/28ms。
+
+结果（同档位 10k×1、120s）：后端处理 2.6k → 9.4k msg/s，客户端 `failed` 34 204 → 0，ackP95 9.8s → 19ms，EMQX `delivery_dropped_queue_full` 不再增长，history 队列丢弃 88.8 万行 → 0。新指标：`iot_batch_size`（每批行数）与 `iot_batch_flush_seconds`（每次写入耗时），两个一起看才知道是"批太小"还是"库太慢"。
+
+完整的定位过程、七步排除法与前后对比图见 [`docs/perf-ingest-retro.md`](perf-ingest-retro.md)。
+
 

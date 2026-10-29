@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 640" width="980" height="640" font-family="'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <text x="24" y="28" font-size="17" font-weight="600" fill="#0f172a">定位路径：七步排除法</text>
+  <text x="24" y="48" font-size="12" fill="#64748b">每一步只回答一个问题：「这一层是瓶颈吗？」不是就往下走，是就停下深挖</text>
+
+  <g>
+    <!-- 1 -->
+    <circle cx="40" cy="84" r="13" fill="#1d4ed8"/>
+    <text x="40" y="89" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">1</text>
+    <text x="66" y="80" font-size="12.5" font-weight="600" fill="#0f172a">看客户端自己的账</text>
+    <text x="66" y="99" font-size="11.5" fill="#475569">sent 10k/s，acked 5.9k/s，failed 2.7 万，ackP95 8.6s → 服务端在限流，不是客户端压不上去</text>
+
+    <!-- 2 -->
+    <circle cx="40" cy="156" r="13" fill="#1d4ed8"/>
+    <text x="40" y="161" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">2</text>
+    <text x="66" y="152" font-size="12.5" font-weight="600" fill="#0f172a">看 EMQX 收与发</text>
+    <text x="66" y="171" font-size="11.5" fill="#475569">messages_received 8.8k/s，messages_sent 1.9k/s，delivery_dropped_queue_full 累计 79.8 万 → 消息堆在 broker</text>
+
+    <!-- 3 -->
+    <circle cx="40" cy="228" r="13" fill="#1d4ed8"/>
+    <text x="40" y="233" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">3</text>
+    <text x="66" y="224" font-size="12.5" font-weight="600" fill="#0f172a">看平台会话的 mqueue / inflight</text>
+    <text x="66" y="243" font-size="11.5" fill="#475569">inflight 反复打满 4×1024 → 平台侧确认不过来；加到 16 条连接后吞吐完全不变 → 排除"每连接吞吐"</text>
+
+    <!-- 4 -->
+    <circle cx="40" cy="300" r="13" fill="#1d4ed8"/>
+    <text x="40" y="305" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">4</text>
+    <text x="66" y="296" font-size="12.5" font-weight="600" fill="#0f172a">抓后端线程栈（kill -3）</text>
+    <text x="66" y="315" font-size="11.5" fill="#475569">Kafka 消费线程与 Paho 回调线程全部空闲，CPU 0.6 核 → 排除"算不过来"，问题在写侧</text>
+
+    <!-- 5 -->
+    <circle cx="40" cy="372" r="13" fill="#1d4ed8"/>
+    <text x="40" y="377" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">5</text>
+    <text x="66" y="368" font-size="12.5" font-weight="600" fill="#0f172a">看 Kafka 分区与消费者</text>
+    <text x="66" y="387" font-size="11.5" fill="#475569">8 分区 / 8 消费者各 1 分区，lag=0 → 排除"单线程消费"这个最常见的怀疑</text>
+
+    <!-- 6 -->
+    <circle cx="40" cy="444" r="13" fill="#dc2626"/>
+    <text x="40" y="449" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">6</text>
+    <text x="66" y="440" font-size="12.5" font-weight="600" fill="#b91c1c">看 PostgreSQL 在等什么</text>
+    <text x="66" y="459" font-size="11.5" fill="#475569">active 13–27，wait_event 反复 WALWrite / DataFileRead，PG CPU 300–500% → 命中：磁盘 WAL 刷盘</text>
+
+    <!-- 7 -->
+    <circle cx="40" cy="516" r="13" fill="#dc2626"/>
+    <text x="40" y="521" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">7</text>
+    <text x="66" y="512" font-size="12.5" font-weight="600" fill="#b91c1c">看每批写多少行</text>
+    <text x="66" y="531" font-size="11.5" fill="#475569">latest 135 行/24ms，history 221 点/15ms → 二次命中：批次太小，每条都摊一次 commit + fsync</text>
+  </g>
+
+  <line x1="40" y1="548" x2="940" y2="548" stroke="#e2e8f0" stroke-width="1"/>
+
+  <rect x="24" y="562" width="916" height="62" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="40" y="584" font-size="12.5" font-weight="600" fill="#1e3a8a">判定规则（可复用）</text>
+  <text x="40" y="604" font-size="11.5" fill="#1e40af">下游计数（EMQX sent → 后端 processed）逐级递减，且后端线程空闲、队列不积压 ⇒ 瓶颈在"被阻塞的写"，看 pg_stat_activity.wait_event</text>
+  <text x="40" y="620" font-size="11.5" fill="#1e40af">反之，后端 CPU 打满而队列积压 ⇒ 瓶颈在应用侧计算；队列积压但写入计数为 0 且连接池 pending 上升 ⇒ 瓶颈在连接池</text>
+</svg>

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 470" width="980" height="470" font-family="'Segoe UI', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <text x="24" y="30" font-size="17" font-weight="600" fill="#0f172a">上行链路与瓶颈点（修复前 → 修复后）</text>
+  <text x="24" y="50" font-size="12" fill="#64748b">同一个 10000 台设备 × 1 条/秒（约 10k msg/s）的压测，红点为实测瓶颈位置</text>
+
+  <!-- boxes -->
+  <g font-size="12" fill="#0f172a">
+    <rect x="24" y="80" width="120" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="84" y="106" text-anchor="middle" font-weight="600">压测客户端</text>
+    <text x="84" y="124" text-anchor="middle" fill="#64748b">10000 连接</text>
+
+    <rect x="184" y="80" width="130" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="249" y="106" text-anchor="middle" font-weight="600">EMQX</text>
+    <text x="249" y="124" text-anchor="middle" fill="#64748b">会话队列 / 投递</text>
+
+    <rect x="354" y="80" width="140" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="424" y="106" text-anchor="middle" font-weight="600">后端 MQTT 网关</text>
+    <text x="424" y="124" text-anchor="middle" fill="#64748b">共享订阅消费</text>
+
+    <rect x="534" y="80" width="130" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="599" y="106" text-anchor="middle" font-weight="600">Kafka</text>
+    <text x="599" y="124" text-anchor="middle" fill="#64748b">8 分区 / 8 消费者</text>
+
+    <rect x="704" y="80" width="120" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="764" y="106" text-anchor="middle" font-weight="600">处理 lane</text>
+    <text x="764" y="124" text-anchor="middle" fill="#64748b">按设备保序</text>
+  </g>
+
+  <g stroke="#64748b" stroke-width="1.4" fill="none">
+    <path d="M144,112 L180,112" marker-end="url(#a)"/>
+    <path d="M314,112 L350,112" marker-end="url(#a)"/>
+    <path d="M494,112 L530,112" marker-end="url(#a)"/>
+    <path d="M664,112 L700,112" marker-end="url(#a)"/>
+  </g>
+
+  <!-- writers -->
+  <rect x="704" y="190" width="250" height="120" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="829" y="214" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">批量写入线程</text>
+  <text x="829" y="234" text-anchor="middle" font-size="11" fill="#475569">latest ×4&#160;&#160; history ×2&#160;&#160; log ×2</text>
+  <text x="829" y="256" text-anchor="middle" font-size="11" fill="#475569">每批最多 2000 行 / 5000 历史点</text>
+  <text x="829" y="278" text-anchor="middle" font-size="11" fill="#475569">linger 50ms 攒批</text>
+  <text x="829" y="298" text-anchor="middle" font-size="11" fill="#16a34a">修复后：981 行/批（原 135）</text>
+
+  <rect x="704" y="340" width="250" height="100" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="829" y="364" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">存储</text>
+  <text x="829" y="386" text-anchor="middle" font-size="11" fill="#475569">PostgreSQL：最新值 JSONB 一行/设备</text>
+  <text x="829" y="404" text-anchor="middle" font-size="11" fill="#475569">InfluxDB：历史点 HTTP 批写</text>
+  <text x="829" y="424" text-anchor="middle" font-size="11" fill="#475569">synchronous_commit=off（仅 ingest 池）</text>
+
+  <g stroke="#64748b" stroke-width="1.4" fill="none">
+    <path d="M764,144 L764,186 L800,186 L800,188" marker-end="url(#a)"/>
+    <path d="M829,310 L829,336" marker-end="url(#a)"/>
+  </g>
+
+  <!-- bottleneck markers: before -->
+  <g font-size="11">
+    <circle cx="249" cy="112" r="9" fill="#dc2626" opacity="0.9"/>
+    <text x="249" y="116" text-anchor="middle" fill="#fff" font-weight="700">1</text>
+    <circle cx="424" cy="112" r="9" fill="#dc2626" opacity="0.9"/>
+    <text x="424" y="116" text-anchor="middle" fill="#fff" font-weight="700">2</text>
+    <circle cx="829" cy="196" r="9" fill="#dc2626" opacity="0.9"/>
+    <text x="829" y="200" text-anchor="middle" fill="#fff" font-weight="700">3</text>
+    <circle cx="829" cy="346" r="9" fill="#dc2626" opacity="0.9"/>
+    <text x="829" y="350" text-anchor="middle" fill="#fff" font-weight="700">4</text>
+  </g>
+
+  <!-- notes -->
+  <g font-size="11.5">
+    <rect x="24" y="190" width="330" height="118" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="40" y="212" font-weight="700" fill="#b91c1c">① 单连接 = 单会话队列</text>
+    <text x="40" y="232" fill="#7f1d1d">一条订阅连接≈6k msg/s 触顶</text>
+    <text x="40" y="250" fill="#7f1d1d">mqueue 满 → 每分钟数万条丢弃</text>
+    <text x="40" y="268" fill="#7f1d1d">→ mailbox_overflow，连接被踢</text>
+    <text x="40" y="294" fill="#16a34a">修复：N 连接 + $share 共享订阅</text>
+
+    <rect x="24" y="326" width="330" height="114" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="40" y="348" font-weight="700" fill="#b91c1c">② 回调/消费线程其实很闲</text>
+    <text x="40" y="368" fill="#7f1d1d">线程栈：全部 WAITING，CPU 0.6 核</text>
+    <text x="40" y="386" fill="#7f1d1d">Kafka 8 分区已跑满并发</text>
+    <text x="40" y="404" fill="#7f1d1d">说明卡在"写"而不是"读"</text>
+    <text x="40" y="430" fill="#16a34a">→ 把排查方向从消费侧改到写库侧</text>
+  </g>
+
+  <g font-size="11.5">
+    <rect x="384" y="190" width="290" height="118" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="400" y="212" font-weight="700" fill="#b91c1c">③ 每批太小（135 行/24ms）</text>
+    <text x="400" y="232" fill="#7f1d1d">批量 = 到达速率 × 上一次写入耗时</text>
+    <text x="400" y="250" fill="#7f1d1d">写入越慢 → 批越小 → 每条开销越大</text>
+    <text x="400" y="268" fill="#7f1d1d">history 需 70k 点/s，实测只有 15k</text>
+    <text x="400" y="294" fill="#16a34a">修复：linger 50ms 先攒后写</text>
+
+    <rect x="384" y="326" width="290" height="114" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+    <text x="400" y="348" font-weight="700" fill="#b91c1c">④ WAL 刷盘等待（真凶）</text>
+    <text x="400" y="368" fill="#7f1d1d">pg_stat_activity 反复 wait_event=WALWrite</text>
+    <text x="400" y="386" fill="#7f1d1d">PG CPU 300–500%，后端却空闲</text>
+    <text x="400" y="404" fill="#7f1d1d">每批 commit 都在等 fsync</text>
+    <text x="400" y="430" fill="#16a34a">修复：ingest 池 synchronous_commit=off</text>
+  </g>
+</svg>
