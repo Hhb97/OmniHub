@@ -32,8 +32,8 @@
 | 场景 | 关键配置 | 结果 | 瓶颈/备注 |
 |---|---|---|---|
 | 5 000 台 × 3 条/秒 = **15k msg/s**，120 s（`IOT_INGEST_MODE=kafka`） | 16 连接 × 4096 broker 窗口，`IOT_LOG_OK_PROPERTY=false` | 后端处理 **1 574 498** 条，等于 EMQX `messages_sent`；mqueue 全程 **0**；在途峰值 4 879/65 536；broker 零丢弃 | **平台侧全通**。客户端仍有 36 584 次（2.5%）发送失败、ackP95 3.56 s，是长尾下客户端打满自己的节拍，不是后端少收。唯一在丢的是 `history`：15k × 7 属性 = 105k 点/s，2 个 writer 只能写约 89k/s，丢 153 万点 |
-| 10 000 台 × 1 条/秒，120 s | 8 连接 × 1024，日志关 | **9.4k msg/s**；客户端 failed 34 204 → 0；ackP95 9.8 s → 19 ms；broker 不再丢 | 同档位下 8 与 16 连接等价；更高速率会撞窗口上限 |
-| 同上，但提到 12k / 15k | 8 连接 × 1024 | 后端只有 **4.6k msg/s**，broker 会话 inflight 顶在 8 192 | 窗口用满，mqueue 涨到 40 万；下游全空闲 |
+| 10 000 台 × 1 条/秒，120 s | 16 连接 × 1024，日志关 | **9.4k msg/s**；客户端 failed 34 204 → 0；ackP95 9.8 s → 19 ms；broker 不再丢 | 8 连接同档为 8.0k，两者在噪声内等价；更高速率会撞窗口上限 |
+| 同上，提到 12k / 15k | 8 连接 × 1024 | 后端只有 **4.6k msg/s**，broker 会话 inflight 顶在 8 192 | 窗口用满，mqueue 涨到 40 万；下游全空闲 |
 | 10 000 台 × 1 条/秒，恢复旧默认 | 4 连接，`IOT_LOG_OK_PROPERTY=true` | **2.0k msg/s**，客户端失败 39 990 条 | `iot_device_message_log` 上限约 4.2k 行/s，且约 13 GB/小时 |
 | 单连接订阅全部上行 | 1 连接 | 约 **6k msg/s** 触顶 | 单会话 mqueue 满 → `dropped_msg_due_to_mqueue_is_full` → `mailbox_overflow` 断连 |
 
