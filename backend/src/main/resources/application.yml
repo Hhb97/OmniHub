@@ -111,6 +111,11 @@ iot:
     # secret shared with the broker's HTTP auth plugin (EMQX) calling /api/mqtt/auth and /api/mqtt/acl
     http-auth-token: ${IOT_MQTT_HTTP_AUTH_TOKEN:}
     subscribe-qos: ${IOT_MQTT_SUBSCRIBE_QOS:1}
+    # The uplink topics are consumed by this many connections in one shared subscription ($share/<group>/<filter>).
+    # One connection is one broker session with one queue: a few thousand messages per second fill it and the broker
+    # starts dropping (docs/tuning.md 搂8). Set to 1 for brokers without shared subscriptions.
+    ingest-connections: ${IOT_MQTT_INGEST_CONNECTIONS:4}
+    shared-group: ${IOT_MQTT_SHARED_GROUP:ingest}
     # true: the broker keeps no session for this client after it disconnects. The client id is random per start, so a
     # persistent session could never be resumed and every restart would leave an orphan session that keeps queueing
     # (and dropping) all uplink messages in the broker. Subscriptions are re-established on every connect anyway.

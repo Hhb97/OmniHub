@@ -89,6 +89,9 @@ services:
       EMQX_FORCE_SHUTDOWN__MAX_MAILBOX_SIZE: ${EMQX_MAX_MAILBOX_SIZE:-100000}
       EMQX_FORCE_SHUTDOWN__MAX_HEAP_SIZE: ${EMQX_MAX_HEAP_SIZE:-512MB}
       EMQX_LISTENERS__TCP__DEFAULT__TCP_OPTIONS__BACKLOG: ${EMQX_TCP_BACKLOG:-4096}
+      # The platform consumes the uplink topics over several connections in a shared subscription. hash_clientid
+      # keeps all messages of one device on the same connection, so per-device ordering survives the fan-out.
+      EMQX_BROKER__SHARED_SUBSCRIPTION_STRATEGY: ${EMQX_SHARED_SUBSCRIPTION_STRATEGY:-hash_clientid}
     ports:
       - "${MQTT_PORT:-1883}:1883"
       - "${EMQX_DASHBOARD_PORT:-18083}:18083"
@@ -160,6 +163,11 @@ services:
       IOT_MQTT_USERNAME: ${IOT_MQTT_USERNAME:-platform}
       IOT_MQTT_PASSWORD: ${IOT_MQTT_PASSWORD:?set IOT_MQTT_PASSWORD in .env}
       IOT_MQTT_HTTP_AUTH_TOKEN: ${IOT_MQTT_HTTP_AUTH_TOKEN:?set IOT_MQTT_HTTP_AUTH_TOKEN in .env}
+      # The uplink topics are consumed by N connections in one shared subscription ($share/<group>/...). One
+      # connection is one broker session with one delivery queue; at a few thousand messages/second that queue is
+      # what fills up and drops (docs/tuning.md §8). 1 = single connection (no shared subscriptions).
+      IOT_MQTT_INGEST_CONNECTIONS: ${IOT_MQTT_INGEST_CONNECTIONS:-4}
+      IOT_MQTT_SHARED_GROUP: ${IOT_MQTT_SHARED_GROUP:-ingest}
       IOT_CORS_ORIGINS: ${IOT_CORS_ORIGINS:-}
       IOT_DASHBOARD_ZONE: ${IOT_DASHBOARD_ZONE:-UTC}
       IOT_API_DOCS_ENABLED: ${IOT_API_DOCS_ENABLED:-false}

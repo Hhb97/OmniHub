@@ -32,6 +32,16 @@ class TopicsTest {
     }
 
     @Test
+    void sharedSubscriptionPrefixesTheFilter() {
+        assertEquals("$share/ingest/iot/+/+/property/post",
+                Topics.shared("ingest", "iot/+/+/property/post"));
+        // every platform subscription can be shared, including the multi-level suffix
+        for (String f : Topics.PLATFORM_SUBSCRIPTIONS) {
+            assertTrue(Topics.shared("ingest", f).startsWith("$share/ingest/"));
+        }
+    }
+
+    @Test
     void dedupCacheDetectsRepeatsAndEvicts() {
         var c = new UplinkProcessor.DedupCache(2);
         assertFalse(c.seen("a"));

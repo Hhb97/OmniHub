@@ -44,6 +44,14 @@ public final class Topics {
         return ROOT + "/" + productKey + "/" + deviceKey + "/command/down";
     }
 
+    /**
+     * A shared subscription makes the broker deliver every message to exactly one of the subscribers in the group,
+     * instead of a copy to every one of them.
+     */
+    public static String shared(String group, String filter) {
+        return "$share/" + group + "/" + filter;
+    }
+
     public static String prefix(String clientId) {
         int dot = clientId.indexOf('.');
         return ROOT + "/" + clientId.substring(0, dot) + "/" + clientId.substring(dot + 1) + "/";

@@ -141,6 +141,9 @@
 | `IOT_DASHBOARD_CACHE_SECONDS` | 10 | 看板聚合缓存时间；0 = 每次查询 |
 | `IOT_SCHEDULER_THREADS` | 4 | `spring.task.scheduling.pool.size` |
 | `IOT_LANE_OVERFLOW` | block | 处理队列满时：block（背压）/ drop（丢弃并计数） |
+| `IOT_MQTT_INGEST_CONNECTIONS` | 4 | 共享订阅的上行连接数；1 = 单连接（broker 不支持 `$share` 时） |
+| `IOT_MQTT_SHARED_GROUP` | ingest | 共享订阅组名（`$share/<group>/<filter>`） |
+| `EMQX_SHARED_SUBSCRIPTION_STRATEGY` | hash_clientid | EMQX 分发策略；按发布者 clientid 哈希，保证同一设备固定落到一条连接 |
  
 ### 8.1 行为变化（请知悉）
 - **最新值最多滞后约 1 秒**（尾部补偿保证最后一条一定落库）。最新值是"当前快照"，不是审计数据；历史库不受影响（仍然每条都写）。
@@ -165,4 +168,30 @@
 4. `IOT_LATEST_MIN_INTERVAL_MS` 调到 5000 能进一步减少写入，但"当前值"最多滞后 5 秒；看板上看到的当前值会相应变旧。
  
 ### 8.4 回归测试
-`backend` 下 `mvn test`：125 项全部通过（含 `DeviceFlowIntegrationTest` 8 项：上报 → 最新值/历史 → 告警触发与恢复 → 看板概览）。本轮没有做真实压测，上面仍不给吞吐数字。
+`backend` 下 `mvn test`：126 项全部通过（含 `DeviceFlowIntegrationTest` 8 项：上报 → 最新值/历史 → 告警触发与恢复 → 看板概览）。本轮没有做真实压测，上面仍不给吞吐数字。
+
+### 8.5 上行入口：多连接共享订阅（`$share/`）
+单连接 = 单个 broker 会话 = 单个投递队列 + 单个 Paho 回调线程。压测中平台只用一条连接订阅全部上行，**约 6k msg/s 就触顶**：EMQX 该会话的 mqueue（`max_mqueue_len=100000`）先满，日志出现每分钟 7–30 万条 `dropped_msg_due_to_mqueue_is_full`，随后 `mailbox_overflow` 直接断开平台连接（后端日志 `MQTT gateway connection lost`）。此时后端自己的计数（lane/batch/forward 丢弃、连接池 pending）全是 0——消息根本没到后端。
+
+现在网关开 `IOT_MQTT_INGEST_CONNECTIONS` 条连接，全部订阅同一个共享订阅：
+
+```
+$share/ingest/iot/+/+/property/post
+$share/ingest/iot/+/+/event/post
+$share/ingest/iot/+/+/status
+$share/ingest/iot/+/+/command/reply
+```
+
+- 每条消息只投递给组内**一条**连接（不是广播），所以多连接是分摊而不是复制。
+- 每个会话有自己的 mqueue，总缓冲随连接数线性增长；每条连接也各有一个回调线程。
+- EMQX 分发策略设为 `hash_clientid`：同一台设备的固定落到同一条连接，保序；下游 Kafka 仍按 `productKey.deviceKey` 做 key，分区内有序。
+- broker 拒绝 `$share`（老版本 / 未开启）时，网关**自动降级为单连接**并打一条 error，不会变成 N 份重复投递。
+- 新指标：`iot_mqtt_gateway_connections`（已连接数）、`iot_mqtt_gateway_connections_expected`（配置数）。
+- 注意：设备侧仍然是一条连接一台；这里扩的是**平台收上行**的连接数。
+
+### 8.6 新指标
+| 指标 | 含义 |
+|---|---|
+| `iot_mqtt_gateway_connections` | 当前已连接的上行连接数 |
+| `iot_mqtt_gateway_connections_expected` | 配置的上行连接数 |
+
