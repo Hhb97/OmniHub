@@ -15,13 +15,14 @@
 | [api-contract.md](api-contract.md) | 前后端 HTTP / WebSocket 契约 |
 | [loadtest.md](loadtest.md) | 压测程序怎么用，怎么复现 15k msg/s |
 | [operations.md](operations.md) | 监控看什么、积压怎么判断、故障排查、已知行为 |
+| [perf-playbook.md](perf-playbook.md) | 吞吐优化手册：每个瓶颈怎么定位、怎么改、效果如何；代码写法经验；压测的坑；排查命令 |
 | [perf-ingest-retro.md](perf-ingest-retro.md) | 历史复盘：七步排除法、每一轮的数字、走过的弯路 |
 
 ## 阅读路径
 
 - **第一次接手**：architecture → ingest → data-model → api-contract
 - **要部署一套**：deployment → configuration → operations
-- **要压测/调吞吐**：ingest（§3 容量公式）→ configuration → loadtest → operations（§2 积压判断）
+- **要压测/调吞吐**：perf-playbook（方法和瓶颈清单）→ ingest（§3 容量公式）→ configuration → loadtest → operations（§2 积压判断）
 - **设备端对接**：mqtt-protocol → api-contract（指令部分）
 - **出问题了**：operations §4 故障排查；先看"哪一层在积压"再看数据库
 
