@@ -2,7 +2,6 @@ package com.omnihub.iot.telemetry;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.common.Jsons;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.thingmodel.ValueValidator;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -45,7 +44,7 @@ public class InfluxHistoryStore implements HistoryStore {
     private static final String M = "device_property";
     private static final Pattern IDENT = Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]{0,63}$");
 
-    private final IotProperties.Influxdb cfg;
+    private final InfluxProperties cfg;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
     /** build = line protocol assembly per request, http = the POST until the response; they split a flush's time. */
@@ -55,8 +54,8 @@ public class InfluxHistoryStore implements HistoryStore {
     private final Counter requestsError;
     private final Counter pointsCounter;
 
-    public InfluxHistoryStore(IotProperties props, MeterRegistry meters) {
-        this.cfg = props.getInfluxdb();
+    public InfluxHistoryStore(InfluxProperties cfg, MeterRegistry meters) {
+        this.cfg = cfg;
         this.buildTimer = Timer.builder("iot_influx_write_seconds").description("InfluxDB history write, per request")
                 .tag("phase", "build").publishPercentileHistogram().register(meters);
         this.httpTimer = Timer.builder("iot_influx_write_seconds").tag("phase", "http").publishPercentileHistogram()

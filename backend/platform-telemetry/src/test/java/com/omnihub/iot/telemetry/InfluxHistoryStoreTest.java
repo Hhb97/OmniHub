@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.telemetry.HistoryStore.Sample;
 import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -32,7 +31,7 @@ class InfluxHistoryStoreTest {
     private HttpServer server;
     private volatile int status = 204;
     private InfluxHistoryStore store;
-    private IotProperties props;
+    private InfluxProperties props;
     private MeterRegistry meters;
 
     @BeforeEach
@@ -45,10 +44,10 @@ class InfluxHistoryStoreTest {
             ex.close();
         });
         server.start();
-        props = new IotProperties();
-        props.getInfluxdb().setUrl("http://127.0.0.1:" + server.getAddress().getPort());
-        props.getInfluxdb().setDatabase("iot");
-        props.getInfluxdb().setCreateDatabase(false);
+        props = new InfluxProperties();
+        props.setUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        props.setDatabase("iot");
+        props.setCreateDatabase(false);
         meters = new SimpleMeterRegistry();
         store = new InfluxHistoryStore(props, meters);
     }
@@ -116,9 +115,9 @@ class InfluxHistoryStoreTest {
 
     @Test
     void retentionPolicyAndBasicAuthAreSent() throws Exception {
-        props.getInfluxdb().setRetentionPolicy("iot_90d");
-        props.getInfluxdb().setUsername("u");
-        props.getInfluxdb().setPassword("p");
+        props.setRetentionPolicy("iot_90d");
+        props.setUsername("u");
+        props.setPassword("p");
         store.writeBatch(List.of(num(1, "t", 1, 1000)));
         assertThat(requests.get(0).query()).contains("rp=iot_90d");
         assertThat(requests.get(0).auth()).isEqualTo("Basic dTpw");

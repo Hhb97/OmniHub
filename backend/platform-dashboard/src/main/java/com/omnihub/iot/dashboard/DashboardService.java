@@ -1,7 +1,6 @@
 package com.omnihub.iot.dashboard;
 
 import com.omnihub.iot.common.BizException;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceService;
 import com.omnihub.iot.device.DeviceVO;
 import com.omnihub.iot.identity.core.CurrentUser;
@@ -59,7 +58,7 @@ public class DashboardService {
     private final long cacheMillis;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
-    public DashboardService(JdbcTemplate jdbc, DeviceService deviceService, IotProperties props) {
+    public DashboardService(JdbcTemplate jdbc, DeviceService deviceService, DashboardProperties props) {
         this.jdbc = jdbc;
         this.deviceService = deviceService;
         this.zone = ZoneId.of(props.getDashboardZone());

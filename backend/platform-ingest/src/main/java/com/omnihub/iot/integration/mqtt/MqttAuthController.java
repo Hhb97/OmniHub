@@ -1,6 +1,5 @@
 package com.omnihub.iot.integration.mqtt;
 
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.messaging.Topics;
 import io.micrometer.core.instrument.Counter;
@@ -39,13 +38,13 @@ public class MqttAuthController {
     private static final long LOG_EVERY_MS = 10_000;
 
     private final DeviceRuntime runtime;
-    private final IotProperties props;
+    private final MqttProperties props;
     private final MeterRegistry registry;
     private final Map<String, Counter> counters = new ConcurrentHashMap<>();
     /** last time a refusal with this reason was logged: one sample per reason every few seconds, never a flood */
     private final Map<String, Long> lastLogged = new ConcurrentHashMap<>();
 
-    public MqttAuthController(DeviceRuntime runtime, IotProperties props, MeterRegistry registry) {
+    public MqttAuthController(DeviceRuntime runtime, MqttProperties props, MeterRegistry registry) {
         this.runtime = runtime;
         this.props = props;
         this.registry = registry;
@@ -71,8 +70,8 @@ public class MqttAuthController {
     public Map<String, String> auth(@RequestHeader(value = "X-Broker-Token", required = false) String token,
             @RequestBody AuthRequest req) {
         checkToken(token);
-        if (req.username() != null && req.username().equals(props.getMqtt().getPlatformUsername())) {
-            String expected = props.getMqtt().getPlatformPassword();
+        if (req.username() != null && req.username().equals(props.getPlatformUsername())) {
+            String expected = props.getPlatformPassword();
             boolean ok = !expected.isEmpty() && req.password() != null && MessageDigest.isEqual(
                     req.password().getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
             count("auth", ok, ok ? "platform" : "platform_bad_password", "username=" + req.username());
@@ -97,7 +96,7 @@ public class MqttAuthController {
             count("acl", false, "no_username", "clientid=" + req.clientid());
             return Map.of("result", "deny");
         }
-        if (user.equals(props.getMqtt().getPlatformUsername())) {
+        if (user.equals(props.getPlatformUsername())) {
             count("acl", true, "platform", "");
             return Map.of("result", "allow");
         }
@@ -118,7 +117,7 @@ public class MqttAuthController {
     }
 
     private void checkToken(String token) {
-        String expected = props.getMqtt().getHttpAuthToken();
+        String expected = props.getHttpAuthToken();
         if (expected.isEmpty() || token == null || !MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8),
                 expected.getBytes(StandardCharsets.UTF_8))) {
             log.warn("Broker hook rejected: header X-Broker-Token is {} (must equal iot.mqtt.http-auth-token)",

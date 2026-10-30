@@ -1,7 +1,6 @@
 package com.omnihub.iot.integration.ws;
 
 import com.omnihub.iot.common.Jsons;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.identity.core.LoginUser;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -50,8 +49,8 @@ public class WsHub {
     private final AtomicLong dropped = new AtomicLong();
     private final Counter droppedCounter;
 
-    public WsHub(IotProperties props, MeterRegistry meters) {
-        IotProperties.Ws cfg = props.getWs();
+    public WsHub(WsProperties props, MeterRegistry meters) {
+        WsProperties cfg = props;
         this.coalesceMillis = Math.max(0, cfg.getCoalesceMillis());
         int threads = Math.max(1, cfg.getSenderThreads());
         this.sender = new ThreadPoolExecutor(threads, threads, 0, TimeUnit.SECONDS,

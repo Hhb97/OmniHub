@@ -3,7 +3,6 @@ package com.omnihub.iot.identity.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.omnihub.iot.config.IotProperties;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -18,9 +17,9 @@ class JwtServiceTest {
     private static final String SECRET = "unit-test-secret-0123456789-0123456789";
 
     private static JwtService service(String secret, int ttlMinutes) {
-        IotProperties props = new IotProperties();
-        props.getSecurity().setJwtSecret(secret);
-        props.getSecurity().setJwtTtlMinutes(ttlMinutes);
+        SecurityProperties props = new SecurityProperties();
+        props.setJwtSecret(secret);
+        props.setJwtTtlMinutes(ttlMinutes);
         JwtService s = new JwtService(props);
         s.init();
         return s;

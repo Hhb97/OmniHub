@@ -365,7 +365,7 @@ metrics 里 history 的两个 shard 就是这两个 worker），所以只改这�
 | 16 连接 × 4096 | 15k + 2 个 history writer | history 丢 153 万点 | 需 `IOT_BATCH_HISTORY_WORKERS=4` |
 
 配套改掉的默认值：`.env.example`（16 / 4096 / `EMQX_MAX_INFLIGHT=4096`）、`docker-compose.yml` 的
-`:-` 兜底值、`application.yml` 与 `IotProperties` 的字段默认值，以及消息日志开关 `IOT_LOG_OK_PROPERTY`
+`:-` 兜底值、`application.yml` 与各模块 `*Properties` 类的字段默认值，以及消息日志开关 `IOT_LOG_OK_PROPERTY`
 （`true` → `false`，理由见 §7）。全新部署开箱就是本节验证过的这一档。
 
 一条可以带走的经验：**"瓶颈在哪"要看相邻两层之间谁在积压。** 这次下游（PG、Kafka、批队列）全部干净，

@@ -1,6 +1,5 @@
 package com.omnihub.iot.integration.mqtt;
 
-import com.omnihub.iot.config.IotProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -60,8 +59,8 @@ public class IngestStats {
 
     private final Deque<Sample> samples = new ArrayDeque<>();
 
-    public IngestStats(IotProperties props, MeterRegistry registry) {
-        this.mode = props.getIngest().getMode();
+    public IngestStats(IngestProperties props, MeterRegistry registry) {
+        this.mode = props.getMode();
         this.registry = registry;
         this.processedMeter = Counter.builder("iot_ingest_processed_total")
                 .description("Uplink messages that entered the processor").register(registry);

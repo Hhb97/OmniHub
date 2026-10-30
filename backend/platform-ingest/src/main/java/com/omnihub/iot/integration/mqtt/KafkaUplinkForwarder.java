@@ -1,7 +1,6 @@
 package com.omnihub.iot.integration.mqtt;
 
 import com.omnihub.iot.common.Jsons;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.messaging.Topics;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -27,9 +26,9 @@ public class KafkaUplinkForwarder {
     private final String topic;
     private final IngestStats stats;
 
-    public KafkaUplinkForwarder(KafkaTemplate<String, String> kafka, IotProperties props, IngestStats stats) {
+    public KafkaUplinkForwarder(KafkaTemplate<String, String> kafka, IngestProperties props, IngestStats stats) {
         this.kafka = kafka;
-        this.topic = props.getIngest().getKafka().getTopic();
+        this.topic = props.getKafka().getTopic();
         this.stats = stats;
     }
 

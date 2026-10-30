@@ -1,6 +1,5 @@
 package com.omnihub.iot.system;
 
-import com.omnihub.iot.config.IotProperties;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,9 +20,9 @@ public class AdminInitializer implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder encoder;
-    private final IotProperties props;
+    private final AdminProperties props;
 
-    public AdminInitializer(JdbcTemplate jdbc, PasswordEncoder encoder, IotProperties props) {
+    public AdminInitializer(JdbcTemplate jdbc, PasswordEncoder encoder, AdminProperties props) {
         this.jdbc = jdbc;
         this.encoder = encoder;
         this.props = props;
@@ -35,18 +34,18 @@ public class AdminInitializer implements ApplicationRunner {
         if (users != null && users > 0) {
             return;
         }
-        String password = props.getAdmin().getInitialPassword();
+        String password = props.getInitialPassword();
         if (password == null || password.length() < 8) {
             log.warn("No users exist and IOT_ADMIN_PASSWORD is not set (min 8 chars): no administrator was created");
             return;
         }
         Long tenantId = jdbc.queryForObject("SELECT id FROM sys_tenant WHERE code = 'default'", Long.class);
         jdbc.update("INSERT INTO sys_user (tenant_id, username, password_hash, nickname) VALUES (?, ?, ?, ?)", tenantId,
-                props.getAdmin().getUsername(), encoder.encode(password), "系统管理员");
+                props.getUsername(), encoder.encode(password), "系统管理员");
         List<Long> ids = jdbc.queryForList("SELECT id FROM sys_user WHERE username = ?", Long.class,
-                props.getAdmin().getUsername());
+                props.getUsername());
         jdbc.update("INSERT INTO sys_user_role (user_id, role_id) SELECT ?, id FROM sys_role WHERE code = 'ADMIN'",
                 ids.get(0));
-        log.info("Initial administrator '{}' created", props.getAdmin().getUsername());
+        log.info("Initial administrator '{}' created", props.getUsername());
     }
 }

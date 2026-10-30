@@ -1,7 +1,6 @@
 package com.omnihub.iot.device;
 
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.product.Product;
 import com.omnihub.iot.product.ProductMapper;
 import com.omnihub.iot.system.service.ConfigService;
@@ -48,7 +47,7 @@ public class DeviceRuntime {
     private final ProductMapper productMapper;
     private final ConfigService config;
     private final ApplicationEventPublisher events;
-    private final IotProperties.Device cfg;
+    private final DeviceProperties cfg;
     /** clientId (productKey.deviceKey) -> device snapshot. Replaced as a whole by {@link #refreshAuthCache()}. */
     private volatile Map<String, Cached> byClientId = new ConcurrentHashMap<>();
     /** Bumped on every invalidation so that a running full refresh does not overwrite newer data. */
@@ -68,13 +67,13 @@ public class DeviceRuntime {
             WHERE d.deleted = 0 AND p.deleted = 0""";
 
     public DeviceRuntime(IngestDb ingestDb, DeviceMapper deviceMapper, ProductMapper productMapper,
-            ConfigService config, ApplicationEventPublisher events, IotProperties props) {
+            ConfigService config, ApplicationEventPublisher events, DeviceProperties props) {
         this.jdbc = ingestDb.jdbc();
         this.deviceMapper = deviceMapper;
         this.productMapper = productMapper;
         this.config = config;
         this.events = events;
-        this.cfg = props.getDevice();
+        this.cfg = props;
     }
 
     /** Devices this instance believes are ONLINE (memory only): compared with the database count by the metrics. */

@@ -1,6 +1,5 @@
 package com.omnihub.iot.identity.web;
 
-import com.omnihub.iot.config.IotProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,8 +25,8 @@ public class MetricsTokenFilter extends OncePerRequestFilter {
 
     private final String token;
 
-    public MetricsTokenFilter(IotProperties props) {
-        this.token = props.getMetrics().getToken();
+    public MetricsTokenFilter(MetricsProperties props) {
+        this.token = props.getToken();
     }
 
     @Override

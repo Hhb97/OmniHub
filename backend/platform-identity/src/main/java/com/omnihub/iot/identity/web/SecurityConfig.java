@@ -2,7 +2,7 @@ package com.omnihub.iot.identity.web;
 
 import com.omnihub.iot.common.ApiResponse;
 import com.omnihub.iot.common.Jsons;
-import com.omnihub.iot.config.IotProperties;
+import com.omnihub.iot.config.CorsProperties;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
@@ -58,7 +58,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource(IotProperties props) {
+    public CorsConfigurationSource corsConfigurationSource(CorsProperties props) {
         CorsConfiguration cfg = new CorsConfiguration();
         List<String> origins = Arrays.stream(props.getCorsAllowedOrigins().split(",")).map(String::trim)
                 .filter(s -> !s.isEmpty()).toList();

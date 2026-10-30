@@ -3,7 +3,6 @@ package com.omnihub.iot.telemetry;
 import com.omnihub.iot.common.SensitiveMasker;
 import com.omnihub.iot.common.ShardedBatchQueue;
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import jakarta.annotation.PreDestroy;
 import java.sql.PreparedStatement;
 import java.sql.Timestamp;
@@ -31,9 +30,9 @@ public class MessageLogger {
     private final boolean logOkProperty;
     private final ShardedBatchQueue<Row> queue;
 
-    public MessageLogger(IngestDb ingestDb, IotProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
+    public MessageLogger(IngestDb ingestDb, TelemetryProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
         this.jdbc = ingestDb.jdbc();
-        IotProperties.Batch b = props.getIngest().getBatch();
+        TelemetryProperties.Batch b = props.getBatch();
         this.logOkProperty = b.isLogOkProperty();
         this.queue = new ShardedBatchQueue<Row>("message-log", b.getLogWorkers(), b.getQueueCapacity(), b.getMaxBatch(),
                 100, b.getLingerMs(), r -> r.deviceId() == null ? 0L : r.deviceId(), this::write).bind(meters);

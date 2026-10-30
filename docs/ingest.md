@@ -296,4 +296,4 @@ PG 写入还受 `synchronous_commit` 影响：ingest 池默认 `off`（不等 WA
 | 通信记录 | `telemetry/MessageLogger.java` |
 | 最后通信时间 / 在线状态 | `device/DeviceRuntime.java` |
 | 批处理队列 | `common/BatchQueue.java` |
-| 配置 | `config/IotProperties.java`、`application.yml` |
+| 配置 | `IngestProperties`、`MqttProperties`（`platform-ingest`），`TelemetryProperties`（`platform-telemetry`），`IngestDbProperties`（`platform-common`），`application.yml` |

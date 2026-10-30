@@ -12,7 +12,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.product.ProductMapper;
 import com.omnihub.iot.system.service.ConfigService;
@@ -28,7 +27,7 @@ class DeviceRuntimeAuthCacheTest {
 
     private static final String SECRET = "s3cret-value";
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
-    private final IotProperties props = new IotProperties();
+    private final DeviceProperties props = new DeviceProperties();
     private DeviceRuntime runtime;
     private DeviceRef ref;
 
@@ -118,7 +117,7 @@ class DeviceRuntimeAuthCacheTest {
     @Test
     @SuppressWarnings("unchecked")
     void warmUpIsSkippedWhenThereAreTooManyDevices() {
-        props.getDevice().setAuthCacheMax(10);
+        props.setAuthCacheMax(10);
         when(jdbc.queryForObject(anyString(), eq(Long.class))).thenReturn(11L);
         runtime.refreshAuthCache();
         verify(jdbc, never()).query(contains("d.id > ?"), any(RowMapper.class), any());

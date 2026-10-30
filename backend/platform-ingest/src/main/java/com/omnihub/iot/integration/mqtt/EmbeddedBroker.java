@@ -1,6 +1,5 @@
 package com.omnihub.iot.integration.mqtt;
 
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import io.moquette.broker.Server;
@@ -41,18 +40,18 @@ public class EmbeddedBroker implements BrokerAdmin {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddedBroker.class);
 
-    private final IotProperties props;
+    private final MqttProperties props;
     private final DeviceRuntime runtime;
     private final Server server = new Server();
 
-    public EmbeddedBroker(IotProperties props, DeviceRuntime runtime) {
+    public EmbeddedBroker(MqttProperties props, DeviceRuntime runtime) {
         this.props = props;
         this.runtime = runtime;
     }
 
     @PostConstruct
     void start() throws IOException {
-        IotProperties.EmbeddedBroker cfg = props.getMqtt().getEmbeddedBroker();
+        MqttProperties.EmbeddedBroker cfg = props.getEmbeddedBroker();
         Properties p = new Properties();
         p.setProperty(IConfig.HOST_PROPERTY_NAME, cfg.getHost());
         p.setProperty(IConfig.PORT_PROPERTY_NAME, String.valueOf(cfg.getPort()));
@@ -80,14 +79,14 @@ public class EmbeddedBroker implements BrokerAdmin {
     }
 
     private boolean isPlatform(String username) {
-        return username != null && username.equals(props.getMqtt().getPlatformUsername());
+        return username != null && username.equals(props.getPlatformUsername());
     }
 
     private IAuthenticator authenticator() {
         return (clientId, username, password) -> {
             String pwd = password == null ? null : new String(password, StandardCharsets.UTF_8);
             if (isPlatform(username)) {
-                String expected = props.getMqtt().getPlatformPassword();
+                String expected = props.getPlatformPassword();
                 return pwd != null && !expected.isEmpty()
                         && MessageDigest.isEqual(pwd.getBytes(StandardCharsets.UTF_8),
                                 expected.getBytes(StandardCharsets.UTF_8));

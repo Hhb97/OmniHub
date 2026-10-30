@@ -17,7 +17,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.IntNode;
 import com.omnihub.iot.command.CommandService;
-import com.omnihub.iot.config.IotProperties;
+import com.omnihub.iot.device.DeviceProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.telemetry.MessageLogger;
@@ -42,7 +42,7 @@ class UplinkProcessorTest {
     private final TelemetryService telemetry = mock(TelemetryService.class);
     private final CommandService commands = mock(CommandService.class);
     private final MessageLogger logger = mock(MessageLogger.class);
-    private final IotProperties props = new IotProperties();
+    private final DeviceProperties props = new DeviceProperties();
     private final DeviceRef ref = new DeviceRef(1L, 1L, 10L, "pk", "dk", "Dev", true, true, "h", "s");
     private UplinkProcessor processor;
 
@@ -50,7 +50,7 @@ class UplinkProcessorTest {
     void setUp() {
         when(runtime.resolve("pk", "dk")).thenReturn(Optional.of(ref));
         when(telemetry.ingestProperties(any(), any(), any())).thenReturn(ACCEPTED);
-        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(props, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(new IngestProperties(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
     }
 
     private void send(String kind, String json) {
@@ -229,8 +229,8 @@ class UplinkProcessorTest {
 
     @Test
     void configuredCacheSizeBoundsMemory() {
-        props.getDevice().setDedupCacheSize(1);
-        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(props, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+        props.setDedupCacheSize(1);
+        processor = new UplinkProcessor(runtime, telemetry, commands, logger, props, new IngestStats(new IngestProperties(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         send("property/post", "{\"id\":\"a\",\"params\":{\"t\":1}}");
         send("property/post", "{\"id\":\"b\",\"params\":{\"t\":1}}"); // evicts a

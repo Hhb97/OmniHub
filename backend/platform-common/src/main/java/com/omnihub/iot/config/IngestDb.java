@@ -33,8 +33,8 @@ public class IngestDb {
     private final JdbcTemplate jdbc;
     private final HikariDataSource pool;
 
-    public IngestDb(DataSource primary, IotProperties props, MeterRegistry meters) {
-        int size = props.getIngest().getDbPool();
+    public IngestDb(DataSource primary, IngestDbProperties props, MeterRegistry meters) {
+        int size = props.getDbPool();
         if (size > 0 && primary instanceof HikariDataSource hikari && hikari.getJdbcUrl() != null) {
             HikariConfig cfg = new HikariConfig();
             cfg.setPoolName("ingest");
@@ -45,11 +45,11 @@ public class IngestDb {
             cfg.setMinimumIdle(Math.min(4, size));
             // fail fast: a batch writer that cannot get a connection gives up and counts the batch as dropped,
             // instead of blocking a lane for Hikari's default 30 seconds
-            cfg.setConnectionTimeout(props.getIngest().getDbTimeoutMs());
+            cfg.setConnectionTimeout(props.getDbTimeoutMs());
             cfg.setInitializationFailTimeout(-1); // the first connection is taken on demand
-            // Telemetry writes must not wait for the WAL to reach the disk (see IotProperties.Ingest): with fsync per
+            // Telemetry writes must not wait for the WAL to reach the disk (see IngestDbProperties): with fsync per
             // batch the writers spend their time in WALWrite waits and cap the whole ingest pipeline.
-            String syncCommit = props.getIngest().getSynchronousCommit();
+            String syncCommit = props.getSynchronousCommit();
             if (syncCommit != null && !syncCommit.isBlank() && !"on".equalsIgnoreCase(syncCommit)) {
                 if (!SYNC_COMMIT_VALUES.contains(syncCommit.toLowerCase(java.util.Locale.ROOT))) {
                     throw new IllegalArgumentException("iot.ingest.synchronous-commit must be one of " + SYNC_COMMIT_VALUES

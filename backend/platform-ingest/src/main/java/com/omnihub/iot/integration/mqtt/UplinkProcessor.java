@@ -3,7 +3,7 @@ package com.omnihub.iot.integration.mqtt;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.command.CommandService;
 import com.omnihub.iot.common.Jsons;
-import com.omnihub.iot.config.IotProperties;
+import com.omnihub.iot.device.DeviceProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.telemetry.MessageLogger;
@@ -46,13 +46,13 @@ public class UplinkProcessor {
     // -> CommandService. The cycle is a runtime one only: the compile-time dependency goes command -> ingest
     // through the com.omnihub.iot.messaging port, and ingest never depends back on a command implementation.
     public UplinkProcessor(DeviceRuntime runtime, TelemetryService telemetry, @Lazy CommandService commands,
-            MessageLogger messageLogger, IotProperties props, IngestStats stats) {
+            MessageLogger messageLogger, DeviceProperties props, IngestStats stats) {
         this.stats = stats;
         this.runtime = runtime;
         this.telemetry = telemetry;
         this.commands = commands;
         this.messageLogger = messageLogger;
-        this.dedup = new DedupCache(props.getDevice().getDedupCacheSize());
+        this.dedup = new DedupCache(props.getDedupCacheSize());
     }
 
     public void handle(String topic, byte[] payload) {

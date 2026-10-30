@@ -1,6 +1,5 @@
 package com.omnihub.iot.integration.mqtt;
 
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.messaging.DownlinkPublisher;
 import com.omnihub.iot.messaging.Topics;
 import jakarta.annotation.PostConstruct;
@@ -43,7 +42,8 @@ public class MqttGateway implements DownlinkPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(MqttGateway.class);
 
-    private final IotProperties props;
+    private final IngestProperties ingest;
+    private final MqttProperties mqtt;
     private final UplinkProcessor processor;
     private final org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder;
     private final ThreadPoolExecutor[] lanes;
@@ -57,15 +57,16 @@ public class MqttGateway implements DownlinkPublisher {
     /** Cleared if the broker refuses {@code $share/...}: the gateway then falls back to a single plain connection. */
     private final AtomicBoolean shared = new AtomicBoolean(true);
 
-    public MqttGateway(IotProperties props, UplinkProcessor processor,
+    public MqttGateway(IngestProperties ingest, MqttProperties mqtt, UplinkProcessor processor,
             org.springframework.beans.factory.ObjectProvider<KafkaUplinkForwarder> forwarder,
             io.micrometer.core.instrument.MeterRegistry meters) {
         this.forwarder = forwarder;
-        this.props = props;
+        this.ingest = ingest;
+        this.mqtt = mqtt;
         this.processor = processor;
-        int laneCount = props.getIngest().getLanes() > 0 ? props.getIngest().getLanes()
+        int laneCount = ingest.getLanes() > 0 ? ingest.getLanes()
                 : Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
-        boolean dropWhenFull = "drop".equalsIgnoreCase(props.getIngest().getLaneOverflow());
+        boolean dropWhenFull = "drop".equalsIgnoreCase(ingest.getLaneOverflow());
         io.micrometer.core.instrument.Counter laneDropped = io.micrometer.core.instrument.Counter
                 .builder("iot_ingest_lane_dropped_total")
                 .description("Uplink messages dropped because every lane queue was full (lane-overflow=drop)")
@@ -73,7 +74,7 @@ public class MqttGateway implements DownlinkPublisher {
         this.lanes = new ThreadPoolExecutor[laneCount];
         for (int i = 0; i < laneCount; i++) {
             int n = i;
-            lanes[i] = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(props.getIngest().getLaneQueue()), r -> {
+            lanes[i] = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(ingest.getLaneQueue()), r -> {
                 Thread t = new Thread(r, "mqtt-lane-" + n);
                 t.setDaemon(true);
                 return t;
@@ -87,8 +88,8 @@ public class MqttGateway implements DownlinkPublisher {
                 r.run();
             });
         }
-        int connections = Math.max(1, props.getMqtt().getIngestConnections());
-        if (props.getMqtt().getSharedGroup() == null || props.getMqtt().getSharedGroup().isBlank()) {
+        int connections = Math.max(1, mqtt.getIngestConnections());
+        if (mqtt.getSharedGroup() == null || mqtt.getSharedGroup().isBlank()) {
             // without a shared group every connection would receive a copy of every message
             connections = 1;
         }
@@ -134,7 +135,7 @@ public class MqttGateway implements DownlinkPublisher {
         if (i > 0 && !shared.get()) {
             return; // the broker refused shared subscriptions; one connection is enough (and avoids duplicates)
         }
-        IotProperties.Mqtt cfg = props.getMqtt();
+        MqttProperties cfg = mqtt;
         String clientId = clients.length > 1 ? cfg.getClientId() + "-" + i : cfg.getClientId();
         try {
             MqttClient c = new MqttClient(cfg.getBrokerUrl(), clientId, new MemoryPersistence());
@@ -170,7 +171,7 @@ public class MqttGateway implements DownlinkPublisher {
         if (c == null) {
             return;
         }
-        IotProperties.Mqtt cfg = props.getMqtt();
+        MqttProperties cfg = mqtt;
         String[] filters = Topics.PLATFORM_SUBSCRIPTIONS;
         String group = cfg.getSharedGroup();
         if (shared.get() && clients.length > 1 && group != null && !group.isBlank()) {
@@ -228,7 +229,7 @@ public class MqttGateway implements DownlinkPublisher {
 
     private int[] qosArray(int length) {
         int[] qos = new int[length];
-        java.util.Arrays.fill(qos, props.getMqtt().getSubscribeQos() == 0 ? 0 : 1);
+        java.util.Arrays.fill(qos, mqtt.getSubscribeQos() == 0 ? 0 : 1);
         return qos;
     }
 

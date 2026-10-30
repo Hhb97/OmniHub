@@ -30,7 +30,7 @@
 
 | 模块 | 包 | 内容 |
 |---|---|---|
-| `platform-common` | `common` `config` | 统一响应 `{code,message,data}`、分页、异常处理、脱敏、`BatchQueue`/`ShardedBatchQueue`、`IotProperties`、MyBatis-Plus 配置、`IngestDb` |
+| `platform-common` | `common` `config` | 统一响应 `{code,message,data}`、分页、异常处理、脱敏、`BatchQueue`/`ShardedBatchQueue`、`CorsProperties`、MyBatis-Plus 配置、`IngestDb`（及 `IngestDbProperties`） |
 | `platform-messaging` | `messaging` | 传输无关的端口：`Topics`（主题约定）、`DownlinkPublisher`、`BrokerAdmin` |
 | `platform-identity` | `identity.core` `identity.web` `system` | `core` 放 `LoginUser`/`CurrentUser`/`JwtService`，`web` 放过滤链与 `SecurityConfig`，`system` 放用户、角色、权限、日志 |
 | `platform-product` | `product` `thingmodel` | 产品；物模型（版本化 JSONB）与值校验 |
@@ -54,6 +54,7 @@ core → dashboard → ingest → realtime → alarm → command → telemetry �
 - **领域模块不认 Broker。** `device`、`command` 只依赖 `platform-messaging` 里的端口（`DownlinkPublisher`、`BrokerAdmin`），由 `platform-ingest` 实现；因此可以再加一个 AMQP/CoAP 接入模块而不动业务代码。
 - **`identity.core` 只放“当前用户 + 令牌”这类被所有模块用到的类型**，安全过滤链在 `identity.web`。这样 `system` 能依赖 `identity.core`，而 `identity.web` 再依赖 `system`，两个包不再互相引用。
 - **只有 `core` 有 `spring-boot-maven-plugin`**，其余模块是普通 jar；`spring-boot:run` 用 `mvn -pl core spring-boot:run`。
+- **配置归模块自己所有。** 每个模块只声明自己用到的 `@ConfigurationProperties` 类（`AlarmProperties`、`DeviceProperties`、`WsProperties`、`InfluxProperties`、`MqttProperties` 等），不存在一个所有模块共用的大配置类。配置键保持原样（`iot.*`），所以 `application.yml`、`.env`、`docker-compose.yml` 不用动；`iot.ingest` 这个前缀由 `IngestProperties`、`TelemetryProperties`、`IngestDbProperties` 各取自己那一部分。`core` 的 `ConfigurationBindingTest` 用真实的 `application.yml` 校验每个键都绑到了正确的类上。
 
 Controller 只做参数与权限；业务在 Service；DTO/VO 用 record。模块间通过 Spring 事件解耦：`PropertyReportedEvent`、`DeviceEventReported`、`DeviceStatusEvent`、`CommandChangedEvent`、`AlarmChangedEvent`。告警引擎与 WebSocket 推送都是监听者，失败不会影响入库。
 

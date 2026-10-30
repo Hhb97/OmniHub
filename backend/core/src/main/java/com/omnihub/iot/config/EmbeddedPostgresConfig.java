@@ -25,8 +25,7 @@ public class EmbeddedPostgresConfig {
     private static final Logger log = LoggerFactory.getLogger(EmbeddedPostgresConfig.class);
 
     @Bean(destroyMethod = "close")
-    public EmbeddedPostgres embeddedPostgres(IotProperties props) throws IOException {
-        IotProperties.EmbeddedPostgres cfg = props.getEmbeddedPostgres();
+    public EmbeddedPostgres embeddedPostgres(EmbeddedPostgresProperties cfg) throws IOException {
         log.info("Starting embedded PostgreSQL on port {} (data dir {})", cfg.getPort(), cfg.getDataDir());
         return EmbeddedPostgres.builder().setPort(cfg.getPort()).setDataDirectory(Path.of(cfg.getDataDir()))
                 .setCleanDataDirectory(false).setServerConfig("timezone", "UTC").start();

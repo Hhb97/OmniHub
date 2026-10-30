@@ -1,6 +1,5 @@
 package com.omnihub.iot.identity.core;
 
-import com.omnihub.iot.config.IotProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -23,18 +22,18 @@ public class JwtService {
     public record Parsed(long userId, String jti, Instant expiresAt) {
     }
 
-    private final IotProperties props;
+    private final SecurityProperties props;
     private SecretKey key;
     /** jti -> expiry. Tokens revoked by logout; entries are dropped once the token would have expired anyway. */
     private final Map<String, Instant> revoked = new ConcurrentHashMap<>();
 
-    public JwtService(IotProperties props) {
+    public JwtService(SecurityProperties props) {
         this.props = props;
     }
 
     @PostConstruct
     void init() {
-        String secret = props.getSecurity().getJwtSecret();
+        String secret = props.getJwtSecret();
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException(
                     "iot.security.jwt-secret (env IOT_JWT_SECRET) must be set and at least 32 bytes long");
@@ -43,7 +42,7 @@ public class JwtService {
     }
 
     public long ttlSeconds() {
-        return Duration.ofMinutes(props.getSecurity().getJwtTtlMinutes()).toSeconds();
+        return Duration.ofMinutes(props.getJwtTtlMinutes()).toSeconds();
     }
 
     public String issue(long userId, long tenantId, String username) {

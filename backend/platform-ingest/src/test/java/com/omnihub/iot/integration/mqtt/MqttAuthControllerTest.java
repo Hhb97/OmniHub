@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime;
 import com.omnihub.iot.integration.mqtt.MqttAuthController.AclRequest;
 import com.omnihub.iot.integration.mqtt.MqttAuthController.AuthRequest;
@@ -26,16 +25,16 @@ class MqttAuthControllerTest {
     private static final String DEVICE = "pk1.dev1";
 
     private final DeviceRuntime runtime = mock(DeviceRuntime.class);
-    private IotProperties props;
+    private MqttProperties props;
     private MqttAuthController controller;
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     @BeforeEach
     void setUp() {
-        props = new IotProperties();
-        props.getMqtt().setHttpAuthToken(TOKEN);
-        props.getMqtt().setPlatformUsername("platform");
-        props.getMqtt().setPlatformPassword("platform-pass");
+        props = new MqttProperties();
+        props.setHttpAuthToken(TOKEN);
+        props.setPlatformUsername("platform");
+        props.setPlatformPassword("platform-pass");
         controller = new MqttAuthController(runtime, props, meters);
     }
 
@@ -63,7 +62,7 @@ class MqttAuthControllerTest {
 
     @Test
     void anUnconfiguredTokenNeverMatchesAnEmptyHeader() {
-        props.getMqtt().setHttpAuthToken("");
+        props.setHttpAuthToken("");
         assertThatThrownBy(() -> controller.auth("", new AuthRequest(DEVICE, DEVICE, "s")))
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> controller.auth(null, new AuthRequest(DEVICE, DEVICE, "s")))
@@ -84,7 +83,7 @@ class MqttAuthControllerTest {
 
     @Test
     void platformAccountWithNoConfiguredPasswordIsAlwaysDenied() {
-        props.getMqtt().setPlatformPassword("");
+        props.setPlatformPassword("");
         assertThat(auth("iot-platform", "platform", "")).isEqualTo("deny");
         assertThat(auth("iot-platform", "platform", "anything")).isEqualTo("deny");
     }

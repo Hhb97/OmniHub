@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnihub.iot.alarm.AlarmDtos.AlarmVO;
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.Device;
 import com.omnihub.iot.device.DeviceMapper;
 import com.omnihub.iot.device.DeviceStatusEvent;
@@ -140,15 +139,15 @@ public class AlarmEngine {
     private final Map<String, Integer> consecutive = new ConcurrentHashMap<>();
 
     public AlarmEngine(JdbcTemplate jdbc, IngestDb ingestDb, AlarmRuleMapper ruleMapper, AlarmRecordMapper recordMapper,
-            DeviceMapper deviceMapper, ApplicationEventPublisher events, IotProperties props, MeterRegistry meters) {
+            DeviceMapper deviceMapper, ApplicationEventPublisher events, AlarmProperties props, MeterRegistry meters) {
         this.jdbc = jdbc;
         this.writeJdbc = ingestDb.jdbc();
         this.ruleMapper = ruleMapper;
         this.recordMapper = recordMapper;
         this.deviceMapper = deviceMapper;
         this.events = events;
-        this.flushMs = Math.max(1, props.getAlarm().getFlushMs());
-        this.tasks = new ArrayBlockingQueue<>(Math.max(1, props.getAlarm().getQueueCapacity()));
+        this.flushMs = Math.max(1, props.getFlushMs());
+        this.tasks = new ArrayBlockingQueue<>(Math.max(1, props.getQueueCapacity()));
         this.worker = new Thread(this::loop, "alarm-eval");
         this.worker.setDaemon(true);
         Gauge.builder("iot_alarm_eval_queue_pending", tasks, BlockingQueue::size)

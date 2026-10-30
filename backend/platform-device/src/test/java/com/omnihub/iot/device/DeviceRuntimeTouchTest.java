@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.product.ProductMapper;
 import com.omnihub.iot.system.service.ConfigService;
@@ -36,7 +35,7 @@ class DeviceRuntimeTouchTest {
         IngestDb ingestDb = mock(IngestDb.class);
         when(ingestDb.jdbc()).thenReturn(jdbc);
         runtime = new DeviceRuntime(ingestDb, mock(DeviceMapper.class), mock(ProductMapper.class),
-                mock(ConfigService.class), mock(ApplicationEventPublisher.class), new IotProperties());
+                mock(ConfigService.class), mock(ApplicationEventPublisher.class), new DeviceProperties());
         when(jdbc.query(contains("online_status <> 'ONLINE'"), any(RowMapper.class), any(), any(), eq(7L)))
                 .thenReturn(List.of(7L));
     }

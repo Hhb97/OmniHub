@@ -1,6 +1,6 @@
 package com.omnihub.iot.integration.ws;
 
-import com.omnihub.iot.config.IotProperties;
+import com.omnihub.iot.config.CorsProperties;
 import java.util.Arrays;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -15,9 +15,9 @@ public class WsConfig implements WebSocketConfigurer {
 
     private final WsHandler handler;
     private final WsAuthInterceptor interceptor;
-    private final IotProperties props;
+    private final CorsProperties props;
 
-    public WsConfig(WsHandler handler, WsAuthInterceptor interceptor, IotProperties props) {
+    public WsConfig(WsHandler handler, WsAuthInterceptor interceptor, CorsProperties props) {
         this.handler = handler;
         this.interceptor = interceptor;
         this.props = props;

@@ -6,7 +6,6 @@ import com.omnihub.iot.common.Jsons;
 import com.omnihub.iot.common.PageResult;
 import com.omnihub.iot.common.ShardedBatchQueue;
 import com.omnihub.iot.config.IngestDb;
-import com.omnihub.iot.config.IotProperties;
 import com.omnihub.iot.device.Device;
 import com.omnihub.iot.device.DeviceRuntime.DeviceRef;
 import com.omnihub.iot.device.DeviceService;
@@ -106,11 +105,11 @@ public class TelemetryService {
 
     public TelemetryService(JdbcTemplate jdbc, IngestDb ingestDb, ThingModelService thingModels,
             DeviceService deviceService, ConfigService config, ApplicationEventPublisher events, HistoryStore history,
-            IotProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
+            TelemetryProperties props, io.micrometer.core.instrument.MeterRegistry meters) {
         this.jdbc = jdbc;
         this.writeJdbc = ingestDb.jdbc();
         this.history = history;
-        IotProperties.Batch b = props.getIngest().getBatch();
+        TelemetryProperties.Batch b = props.getBatch();
         this.historyRetries = io.micrometer.core.instrument.Counter.builder("iot_history_flush_retries_total")
                 .description("History batches that failed once and were retried after 300 ms").register(meters);
         this.latestWriter = new ShardedBatchQueue<HistoryStore.Sample>("latest", b.getWorkers(), b.getQueueCapacity(),
@@ -118,7 +117,7 @@ public class TelemetryService {
         this.historyWriter = new ShardedBatchQueue<HistoryStore.Sample>("history", b.getHistoryWorkers(),
                 b.getQueueCapacity(), b.getHistoryMaxBatch(), 100, b.getLingerMs(), s -> s.deviceId(),
                 this::flushHistory).bind(meters);
-        this.latestMinIntervalMs = Math.max(0, props.getIngest().getLatestMinIntervalMs());
+        this.latestMinIntervalMs = Math.max(0, props.getLatestMinIntervalMs());
         if (latestMinIntervalMs > 0) {
             long period = Math.max(100, latestMinIntervalMs / 2);
             this.latestFlusher = Executors.newSingleThreadScheduledExecutor(r -> {
