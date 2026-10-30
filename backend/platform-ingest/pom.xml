@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.omnihub</groupId>
+    <artifactId>omnihub-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>platform-ingest</artifactId>
+  <name>Platform ingest</name>
+  <description>MQTT transports: shared-subscription uplink, downlink publisher, DIRECT/KAFKA switch, embedded development broker, broker authentication callback.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-messaging</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-identity</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-product</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-device</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-telemetry</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.omnihub</groupId>
+      <artifactId>platform-command</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.paho</groupId>
+      <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.moquette</groupId>
+      <artifactId>moquette-broker</artifactId>
+      <exclusions>
+        <!-- Brings its own SLF4J binding; Spring Boot uses Logback and two bindings break the logger factory. -->
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-reload4j</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.kafka</groupId>
+      <artifactId>spring-kafka</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

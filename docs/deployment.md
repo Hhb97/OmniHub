@@ -127,7 +127,7 @@ InfluxDB 历史在卷 `influxdata`，保留策略默认 90 天（`IOT_INFLUX_RET
 
 ## 2. 本机已有中间件（`localext` profile）
 
-`backend/src/main/resources/application-localext.yml` 里**没有任何密码**，全部来自环境变量。
+`backend/core/src/main/resources/application-localext.yml` 里**没有任何密码**，全部来自环境变量。
 
 ### 2.1 PostgreSQL（≥ 14）
 
@@ -183,7 +183,7 @@ export IOT_ADMIN_PASSWORD=...         # 首个管理员，用户表为空时才�
 export IOT_MQTT_PASSWORD=...          # platform 账号密码（自己定，后端校验）
 export IOT_MQTT_HTTP_AUTH_TOKEN=...   # 与 EMQX 脚本/配置一致
 
-cd backend && mvn spring-boot:run -Dspring-boot.run.profiles=localext
+cd backend && mvn -DskipTests install && mvn -pl core spring-boot:run -Dspring-boot.run.profiles=localext
 ```
 
 可选：`IOT_DB_URL`、`IOT_DB_USER`、`IOT_INFLUX_URL`、`IOT_INFLUX_DB`、`IOT_INFLUX_USER`、`IOT_INFLUX_PASSWORD`、`IOT_MQTT_BROKER_URL`。

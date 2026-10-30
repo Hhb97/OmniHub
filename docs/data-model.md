@@ -1,6 +1,6 @@
 # 数据模型
 
-PostgreSQL 14+（开发与部署用 16）。结构由 Flyway 管理，迁移在 `backend/src/main/resources/db/migration/`：
+PostgreSQL 14+（开发与部署用 16）。结构由 Flyway 管理，迁移在 `backend/core/src/main/resources/db/migration/`：
 
 - `V1__init_schema.sql`：全部表结构
 - `V2__seed_permissions.sql`：租户、权限目录、内置角色、系统配置

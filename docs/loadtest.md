@@ -1,13 +1,13 @@
 # 压测程序（Java）
 
-位置：`backend/src/test/java/com/omnihub/iot/loadtest/MqttLoadRunner.java`（不是 JUnit 测试，`mvn test` 不会运行它）。
+位置：`backend/core/src/test/java/com/omnihub/iot/loadtest/MqttLoadRunner.java`（不是 JUnit 测试，`mvn test` 不会运行它）。
 
 作用：读取“批量新增设备”导出的 **设备 JSON 文件**，**每个设备一个真实 MQTT 连接**，按固定速率上报属性数据，并统计发送/确认速率、确认延迟、认证失败、重连。不访问数据库。使用 HiveMQ MQTT 客户端（Netty 异步，连接多时比 Paho 省线程）。
 
 > 状态：已在 16 核 VM 上跑通，单进程最多 5 000 台设备（5 000 条连接）、15k msg/s 目标速率持续 120 秒；broker 零丢弃，后端处理量与 EMQX `messages_sent` 完全一致（客户端自身仍有约 2.5% 的长尾失败，见 §"复现 15k"）。第一次仍建议先用少量设备（`--limit 10`）试跑。
 
 ## 0. 用脚本一次性创建产品、物模型和大量设备（推荐）
-`scripts/loadtest-setup.mjs`（需要 Node 18+）通过平台接口：创建产品（已存在则复用）→ 保存物模型（默认 `backend/src/test/resources/loadtest/thing-model.json`）→ 分批批量创建设备 → 生成压测程序要读的设备 JSON。
+`scripts/loadtest-setup.mjs`（需要 Node 18+）通过平台接口：创建产品（已存在则复用）→ 保存物模型（默认 `backend/core/src/test/resources/loadtest/thing-model.json`）→ 分批批量创建设备 → 生成压测程序要读的设备 JSON。
 ```powershell
 node scripts/loadtest-setup.mjs --base http://<主机>:8088 --broker mqtt://<主机>:1883 --count 10000
 ```
@@ -39,7 +39,7 @@ node scripts/loadtest-setup.mjs --base http://<主机>:8088 --broker mqtt://<主
 程序只用 `productKey`、`deviceKey`、`deviceSecret`（也可用 `password` 代替 `deviceSecret`），其余字段忽略。密钥只在创建时显示一次，所以创建时一定要保存文件。
 
 ## 2. 载荷（属性）
-默认使用 `backend/src/test/resources/loadtest/thing-model.json` 里的属性：`temperature`、`humidity`、`switch`、`mode`、`voltage`、`power`、`targetTemp`（与演示物模型一致）。每次上报包含全部属性。
+默认使用 `backend/core/src/test/resources/loadtest/thing-model.json` 里的属性：`temperature`、`humidity`、`switch`、`mode`、`voltage`、`power`、`targetTemp`（与演示物模型一致）。每次上报包含全部属性。
 
 换成别的产品：用 `--model 文件` 指定物模型 JSON（完整物模型对象，或只含属性的数组）。**产品的物模型里必须有这些属性**，否则平台会拒绝未定义的属性（设备“通信记录”里标 `INVALID`）。
 

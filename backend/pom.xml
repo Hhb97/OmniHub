@@ -11,218 +11,165 @@
   </parent>
 
   <groupId>com.omnihub</groupId>
-  <artifactId>iot-backend</artifactId>
+  <artifactId>omnihub-parent</artifactId>
   <version>0.1.0</version>
-  <name>iot-backend</name>
-  <description>General purpose IoT platform backend</description>
+  <packaging>pom</packaging>
+  <name>OmniHub backend</name>
+  <description>General purpose IoT platform: one deployable, several modules</description>
+
+  <!--
+    Module order is the dependency order. Nothing below may depend on a module above it, and only `core`
+    produces an executable artifact. See docs/architecture.md for the rules each module follows.
+  -->
+  <modules>
+    <module>platform-common</module>
+    <module>platform-messaging</module>
+    <module>platform-identity</module>
+    <module>platform-product</module>
+    <module>platform-device</module>
+    <module>platform-telemetry</module>
+    <module>platform-command</module>
+    <module>platform-alarm</module>
+    <module>platform-realtime</module>
+    <module>platform-ingest</module>
+    <module>platform-dashboard</module>
+    <module>core</module>
+  </modules>
 
   <properties>
-    <!-- Target is Java 21. Build with -Djava.version=21 on a JDK 21; 17 is the minimum that Boot 3.5 supports
-         and is what the development machine had, so it is the default here. No 21-only API is used. -->
+    <!-- Java 21 is the target; 17 is the minimum Boot 3.5 supports and what the development machine had.
+         Build with -Djava.version=21 (the Dockerfile does). No 21-only API is used. -->
     <java.version>17</java.version>
     <mybatis-plus.version>3.5.12</mybatis-plus.version>
     <jjwt.version>0.12.6</jjwt.version>
     <springdoc.version>2.8.13</springdoc.version>
     <paho.version>1.2.5</paho.version>
     <moquette.version>0.17</moquette.version>
+    <hivemq.version>1.3.3</hivemq.version>
     <zonky-pg.version>2.0.7</zonky-pg.version>
     <zonky-pg-bin.version>16.4.0</zonky-pg-bin.version>
   </properties>
 
-  <dependencies>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-security</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-websocket</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-aop</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.micrometer</groupId>
-      <artifactId>micrometer-registry-prometheus</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc</artifactId>
-    </dependency>
+  <dependencyManagement>
+    <dependencies>
+      <!-- internal modules: every module is versioned with the parent -->
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-messaging</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-identity</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-product</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-device</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-telemetry</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-command</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-alarm</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-realtime</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-ingest</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.omnihub</groupId>
+        <artifactId>platform-dashboard</artifactId>
+        <version>${project.version}</version>
+      </dependency>
 
-    <dependency>
-      <groupId>com.baomidou</groupId>
-      <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-      <version>${mybatis-plus.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.baomidou</groupId>
-      <artifactId>mybatis-plus-jsqlparser</artifactId>
-      <version>${mybatis-plus.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-database-postgresql</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-api</artifactId>
-      <version>${jjwt.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-impl</artifactId>
-      <version>${jjwt.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-jackson</artifactId>
-      <version>${jjwt.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.springdoc</groupId>
-      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-      <version>${springdoc.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.eclipse.paho</groupId>
-      <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
-      <version>${paho.version}</version>
-    </dependency>
-    <!-- Embedded MQTT broker, used only for local development (iot.mqtt.embedded-broker.enabled=true).
-         Production uses an external broker (EMQX / Mosquitto), see docker-compose.yml. -->
-    <dependency>
-      <groupId>io.moquette</groupId>
-      <artifactId>moquette-broker</artifactId>
-      <version>${moquette.version}</version>
-    </dependency>
-
-    <!-- Optional ingest path: device uplink via Kafka (iot.ingest.mode=kafka). Inactive unless enabled. -->
-    <dependency>
-      <groupId>org.springframework.kafka</groupId>
-      <artifactId>spring-kafka</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>org.projectlombok</groupId>
-      <artifactId>lombok</artifactId>
-      <optional>true</optional>
-    </dependency>
-
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <!-- Used only by the load test runner under src/test (netty based, scales to many connections) -->
-    <dependency>
-      <groupId>com.hivemq</groupId>
-      <artifactId>hivemq-mqtt-client</artifactId>
-      <version>1.3.3</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.security</groupId>
-      <artifactId>spring-security-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <profiles>
-    <!-- Embedded PostgreSQL for local development and tests (no Docker / local install needed).
-         Disable for production builds: mvn package -P '!embedded' -->
-    <profile>
-      <id>embedded</id>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <dependencies>
-        <dependency>
-          <groupId>io.zonky.test</groupId>
-          <artifactId>embedded-postgres</artifactId>
-          <version>${zonky-pg.version}</version>
-        </dependency>
-        <dependency>
-          <groupId>io.zonky.test.postgres</groupId>
-          <artifactId>embedded-postgres-binaries-windows-amd64</artifactId>
-          <version>${zonky-pg-bin.version}</version>
-        </dependency>
-        <dependency>
-          <groupId>io.zonky.test.postgres</groupId>
-          <artifactId>embedded-postgres-binaries-linux-amd64</artifactId>
-          <version>${zonky-pg-bin.version}</version>
-        </dependency>
-        <dependency>
-          <groupId>io.zonky.test.postgres</groupId>
-          <artifactId>embedded-postgres-binaries-darwin-arm64v8</artifactId>
-          <version>${zonky-pg-bin.version}</version>
-        </dependency>
-      </dependencies>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <configuration>
-              <excludes combine.self="override"/>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
+      <!-- third party versions that Spring Boot does not manage -->
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-jsqlparser</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-api</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-impl</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.jsonwebtoken</groupId>
+        <artifactId>jjwt-jackson</artifactId>
+        <version>${jjwt.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springdoc</groupId>
+        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        <version>${springdoc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.paho</groupId>
+        <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+        <version>${paho.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.moquette</groupId>
+        <artifactId>moquette-broker</artifactId>
+        <version>${moquette.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.hivemq</groupId>
+        <artifactId>hivemq-mqtt-client</artifactId>
+        <version>${hivemq.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
-    <plugins>
-      <!-- EmbeddedPostgresConfig needs the zonky classes: it is only compiled in the `embedded` profile -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>**/EmbeddedPostgresConfig.java</exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>
-              <groupId>org.projectlombok</groupId>
-              <artifactId>lombok</artifactId>
-            </exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-    </plugins>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <release>${java.version}</release>
+            <parameters>true</parameters>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
 </project>

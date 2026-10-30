@@ -24,19 +24,36 @@
 - **前端**：只通过 HTTP/WebSocket 访问后端，权限最终由后端 `@PreAuthorize` 校验。
 - **存储**：PostgreSQL 存业务数据、最新值、事件、通信记录；属性历史可存 PostgreSQL 或 InfluxDB（compose 默认 InfluxDB）；Kafka 只在 `IOT_INGEST_MODE=kafka` 时参与。
 
-## 后端分层（`com.omnihub.iot`）
+## 后端模块（`backend/`）
 
-| 包 | 内容 |
-|---|---|
-| `common` | 统一响应 `{code,message,data}`、分页、异常处理、敏感信息脱敏、`BatchQueue` |
-| `config` / `security` | 配置属性、MyBatis-Plus、JWT、Spring Security、指标令牌 |
-| `system` | 用户、角色、权限、配置、操作/登录日志、管理员初始化 |
-| `product` `thingmodel` `device` | 产品；物模型（版本化 JSONB）与值校验；设备与凭证、在线状态、认证缓存、`DeviceRuntime` |
-| `telemetry` | 上行属性/事件入库、最新值、历史、趋势聚合、保留清理、通信记录、Influx 写入 |
-| `command` | 指令状态机与超时 |
-| `alarm` | 规则、告警引擎、告警记录 |
-| `dashboard` | 统计接口 |
-| `integration.mqtt` / `integration.ws` | MQTT 网关、共享订阅、lane、`UplinkProcessor`、内置 Broker、WebSocket |
+后端是一个多模块 Maven 工程：源码按职责拆到 `platform-*` 模块，**只有 `core` 产生可执行的 Spring Boot jar**（`core/target/iot-backend-*.jar`）。模块间的依赖在编译期就固定下来，越界会直接编译失败，不靠约定。
+
+| 模块 | 包 | 内容 |
+|---|---|---|
+| `platform-common` | `common` `config` | 统一响应 `{code,message,data}`、分页、异常处理、脱敏、`BatchQueue`/`ShardedBatchQueue`、`IotProperties`、MyBatis-Plus 配置、`IngestDb` |
+| `platform-messaging` | `messaging` | 传输无关的端口：`Topics`（主题约定）、`DownlinkPublisher`、`BrokerAdmin` |
+| `platform-identity` | `identity.core` `identity.web` `system` | `core` 放 `LoginUser`/`CurrentUser`/`JwtService`，`web` 放过滤链与 `SecurityConfig`，`system` 放用户、角色、权限、日志 |
+| `platform-product` | `product` `thingmodel` | 产品；物模型（版本化 JSONB）与值校验 |
+| `platform-device` | `device` | 设备与凭证、在线状态、认证缓存、`DeviceRuntime` |
+| `platform-telemetry` | `telemetry` | 属性/事件入库、最新值、历史、趋势聚合、保留清理、通信记录、Influx 写入 |
+| `platform-command` | `command` | 指令状态机与超时 |
+| `platform-alarm` | `alarm` | 规则、告警引擎、告警记录 |
+| `platform-realtime` | `integration.ws` | WebSocket 会话与合并推送 |
+| `platform-ingest` | `integration.mqtt` | MQTT 网关、共享订阅、lane、`UplinkProcessor`、Kafka 转发与消费、内置 Broker、broker 认证回调、接入统计 |
+| `platform-dashboard` | `dashboard` | 统计接口与业务指标刷新 |
+| `core` | `com.omnihub.iot` `config` | 启动类、`application*.yml`、Flyway 迁移、`OpenApiConfig`、`EmbeddedPostgresConfig`、跨模块集成测试；唯一打包成 boot jar 的模块 |
+
+依赖方向（父 pom 的 `<modules>` 顺序就是构建顺序，下层不能反向依赖上层）：
+
+```
+core → dashboard → ingest → realtime → alarm → command → telemetry → device → product → identity → messaging → common
+```
+
+三条硬规则：
+
+- **领域模块不认 Broker。** `device`、`command` 只依赖 `platform-messaging` 里的端口（`DownlinkPublisher`、`BrokerAdmin`），由 `platform-ingest` 实现；因此可以再加一个 AMQP/CoAP 接入模块而不动业务代码。
+- **`identity.core` 只放“当前用户 + 令牌”这类被所有模块用到的类型**，安全过滤链在 `identity.web`。这样 `system` 能依赖 `identity.core`，而 `identity.web` 再依赖 `system`，两个包不再互相引用。
+- **只有 `core` 有 `spring-boot-maven-plugin`**，其余模块是普通 jar；`spring-boot:run` 用 `mvn -pl core spring-boot:run`。
 
 Controller 只做参数与权限；业务在 Service；DTO/VO 用 record。模块间通过 Spring 事件解耦：`PropertyReportedEvent`、`DeviceEventReported`、`DeviceStatusEvent`、`CommandChangedEvent`、`AlarmChangedEvent`。告警引擎与 WebSocket 推送都是监听者，失败不会影响入库。
 

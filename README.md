@@ -4,6 +4,7 @@
 
 ```
 backend/    Spring Boot 3.5 + MyBatis-Plus + Flyway + JWT + WebSocket + MQTT 网关
+            多模块 Maven：platform-* 按职责拆分，只有 core 打可执行 jar（见 docs/architecture.md）
 frontend/   Vue 3 + TypeScript + Vite + Element Plus + Pinia + ECharts
 simulator/  独立的 MQTT 模拟设备 + 演示数据初始化 + 场景测试 (Node)
 scripts/    端到端冒烟脚本、压测建号脚本、EMQX 配置脚本
@@ -16,7 +17,7 @@ docs/       架构、上行链路、数据模型、配置、部署、运维、AP
 | 项目 | 状态 |
 |---|---|
 | 后端编译、`local` profile 启动、Flyway 迁移 | 已在 Windows + JDK 17 上实际运行 |
-| JUnit 单元/集成测试（`backend/src/test`） | **126 项通过**（含嵌入式 PG + 嵌入式 Broker 的 `DeviceFlowIntegrationTest` 8 项） |
+| JUnit 单元/集成测试（`backend/platform-*/src/test`、`backend/core/src/test`） | **126 项通过**（含嵌入式 PG + 嵌入式 Broker 的 `DeviceFlowIntegrationTest` 8 项） |
 | 真实 MQTT 链路（认证、ACL、上报、指令、遗嘱离线） | `scripts/e2e-smoke.mjs` 29 项、`simulator/src/e2e-scenarios.js` 40 项通过；EMQX 5.7.2 上 HTTP 认证/授权也已验证 |
 | 前端 lint / build | 通过；登录、仪表盘、设备实时数据、下发指令已在浏览器对真实后端手动验证 |
 | Docker Compose 整套栈 | 已在 16 核 / 11G Linux VM 上部署运行：11 个容器、后端健康、EMQX 回调、Prometheus 目标、Grafana 看板 |
@@ -33,7 +34,8 @@ docs/       架构、上行链路、数据模型、配置、部署、运维、AP
 ```bash
 # 1. 后端（默认 8080；端口被占用可加 SERVER_PORT=8081）
 cd backend
-mvn spring-boot:run -Dspring-boot.run.profiles=local
+mvn -DskipTests install                                  # 首次、或改过 platform-* 模块后执行一次
+mvn -pl core spring-boot:run -Dspring-boot.run.profiles=local
 # 开发管理员：admin / Admin@123456（仅 local profile，可用 IOT_ADMIN_PASSWORD 覆盖）。Swagger: /swagger-ui.html
 
 # 2. 前端（5173，代理 /api 和 /ws 到后端）
@@ -77,7 +79,7 @@ sh deploy/emqx-bootstrap.sh
 - 前端 `http://host:${WEB_PORT}`（默认 8088），设备 MQTT 连接 `host:${MQTT_PORT}`（1883，未启用 TLS，生产请在前面加 TLS 终结）。
 - 不使用 `local` profile；管理员密码来自 `IOT_ADMIN_PASSWORD`，仅在用户表为空时创建。
 - 也可以用 `deploy/deploy-vm.ps1` 从 Windows 一键部署（支持 `-Prebuilt` 在本机构建）。
-- 非 compose 部署：`cd backend && mvn -P '!embedded' package`，再用环境变量运行 jar。
+- 非 compose 部署：`cd backend && mvn -P '!embedded' -pl core -am package`，再用环境变量运行 `core/target/iot-backend-*.jar`。
 
 完整步骤、主机要求、EMQX 配置、备份升级、本机中间件接入见 [docs/deployment.md](docs/deployment.md)；全部环境变量见 [docs/configuration.md](docs/configuration.md)。
 

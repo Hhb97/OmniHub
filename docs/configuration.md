@@ -1,6 +1,6 @@
 # 配置参考
 
-这份文档是**环境变量的唯一权威表**。代码里的默认值在 `backend/src/main/resources/application.yml`，部署栈的默认值在 `docker-compose.yml` 和 `.env.example`；两处不一致的地方单独列在 §4。
+这份文档是**环境变量的唯一权威表**。代码里的默认值在 `backend/core/src/main/resources/application.yml`，部署栈的默认值在 `docker-compose.yml` 和 `.env.example`；两处不一致的地方单独列在 §4。
 
 优先级（从高到低）：
 

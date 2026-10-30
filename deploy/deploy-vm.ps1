@@ -36,14 +36,14 @@ if ($Prebuilt) {
     $tmp = Join-Path $env:TEMP 'omnihub-be-build'
     if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
     $be = Join-Path $root 'backend'
-    & robocopy $be $tmp /E /XD (Join-Path $be 'target') (Join-Path $be 'data') /XF application-localext.yml loadtest.properties *.log /NFL /NDL /NJH /NJS | Out-Null
+    & robocopy $be $tmp /E /XD target data /XF application-localext.yml loadtest.properties *.log /NFL /NDL /NJH /NJS | Out-Null
     Push-Location $tmp
     try {
         & mvn -B -q -P '!embedded' '-Dmaven.test.skip=true' package
         if ($LASTEXITCODE -ne 0) { throw 'mvn package failed' }
     } finally { Pop-Location }
     New-Item -ItemType Directory -Force $prebuiltDir | Out-Null
-    $jar = Get-ChildItem (Join-Path $tmp 'target/iot-backend-*.jar') | Where-Object Name -notmatch 'original' | Select-Object -First 1
+    $jar = Get-ChildItem (Join-Path $tmp 'core/target/iot-backend-*.jar') | Where-Object Name -notmatch 'original' | Select-Object -First 1
     Copy-Item $jar.FullName (Join-Path $prebuiltDir 'app.jar')
     Remove-Item $tmp -Recurse -Force
 
@@ -63,7 +63,7 @@ $archive = Join-Path $env:TEMP 'omnihub-deploy.tar.gz'
 if (Test-Path $archive) { Remove-Item $archive -Force }
 $excludes = @('.git', '.idea', '.vscode', 'node_modules', 'dist', 'target', 'backend/data', '.env', '*.local.json',
     'loadtest.properties', 'backend/loadtest.properties', 'frontend/.env.local',
-    'backend/src/main/resources/application-localext.yml', 'simulator/config.local.json')
+    'backend/core/src/main/resources/application-localext.yml', 'simulator/config.local.json')
 $excludeArgs = $excludes | ForEach-Object { "--exclude=$_" }
 & tar -czf $archive @excludeArgs -C $root .
 if ($LASTEXITCODE -ne 0) { throw 'tar failed' }

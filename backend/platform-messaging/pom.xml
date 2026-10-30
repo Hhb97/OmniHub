@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.omnihub</groupId>
+    <artifactId>omnihub-parent</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>platform-messaging</artifactId>
+  <name>Platform messaging API</name>
+  <description>Transport-neutral contracts for device messaging: topic conventions and the downlink / broker-admin ports. Implemented by platform-ingest (MQTT) so that domain modules never depend on a broker.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
